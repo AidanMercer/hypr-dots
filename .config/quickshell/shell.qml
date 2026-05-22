@@ -45,11 +45,31 @@ ShellRoot {
                 readonly property int wsPerPage: 5
                 readonly property int focusedWsId: Hyprland.focusedWorkspace?.id ?? 1
                 readonly property int wsPageStart: Math.floor((focusedWsId - 1) / wsPerPage) * wsPerPage + 1
+                readonly property int activeIndex: focusedWsId - wsPageStart
+                readonly property int pillWidth: 26
+                readonly property int pillSpacing: 4
+
+                // Floating "liquid" indicator that slides between pills
+                Rectangle {
+                    id: activeIndicator
+                    width: wsBubble.pillWidth
+                    height: 22
+                    radius: 11
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: wsRow.x + wsBubble.activeIndex * (wsBubble.pillWidth + wsBubble.pillSpacing)
+                    color: Qt.rgba(0.1, 0.1, 0.14, 0.22)
+                    border.color: Qt.rgba(1, 1, 1, 0.18)
+                    border.width: 1
+
+                    Behavior on x {
+                        SpringAnimation { spring: 2.6; damping: 0.28; epsilon: 0.1 }
+                    }
+                }
 
                 Row {
                     id: wsRow
                     anchors.centerIn: parent
-                    spacing: 4
+                    spacing: wsBubble.pillSpacing
 
                     Repeater {
                         model: wsBubble.wsPerPage
@@ -61,12 +81,12 @@ ShellRoot {
                             readonly property bool isActive: Hyprland.focusedWorkspace?.id === wsId
                             readonly property bool isOccupied: Hyprland.workspaces.values.some(ws => ws.id === wsId)
 
-                            width: 26
+                            width: wsBubble.pillWidth
                             height: 22
                             radius: 11
-                            color: isActive
-                                ? "#a8b5e8"
-                                : (isOccupied ? Qt.rgba(1, 1, 1, 0.12) : "transparent")
+                            color: !isActive && isOccupied
+                                ? Qt.rgba(1, 1, 1, 0.08)
+                                : "transparent"
 
                             Behavior on color { ColorAnimation { duration: 200 } }
 
@@ -74,7 +94,7 @@ ShellRoot {
                                 anchors.centerIn: parent
                                 text: wsItem.wsId
                                 color: wsItem.isActive
-                                    ? "#1a1a2e"
+                                    ? "#ffffff"
                                     : (wsItem.isOccupied ? "#e6e6f0" : "#6a6a78")
                                 font.pixelSize: 11
                                 font.weight: Font.Bold
