@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Services.Pipewire
+import Quickshell.Io
 
 ShellRoot {
     SystemClock {
@@ -19,7 +20,7 @@ ShellRoot {
 
         PanelWindow {
             id: bar
-            property var modelData
+            required property var modelData
             screen: modelData
 
             WlrLayershell.namespace: "quickshell-bar"
@@ -29,7 +30,7 @@ ShellRoot {
                 left: true
                 right: true
             }
-            height: 44
+            implicitHeight: 44
             color: "transparent"
 
             component Bubble: Rectangle {
@@ -38,6 +39,62 @@ ShellRoot {
                 color: Qt.rgba(0.1, 0.1, 0.14, 0.22)
                 border.color: Qt.rgba(1, 1, 1, 0.18)
                 border.width: 1
+            }
+
+            component SpeakerIcon: Canvas {
+                id: speaker
+                width: 16
+                height: 12
+
+                property color iconColor: "#e6e6f0"
+                property bool muted: false
+                property real level: 1.0
+
+                onIconColorChanged: requestPaint()
+                onMutedChanged: requestPaint()
+                onLevelChanged: requestPaint()
+                Component.onCompleted: requestPaint()
+
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.fillStyle = iconColor
+                    ctx.strokeStyle = iconColor
+                    ctx.lineWidth = 1.4
+                    ctx.lineCap = "round"
+
+                    ctx.beginPath()
+                    ctx.moveTo(0.5, 4.5)
+                    ctx.lineTo(3, 4.5)
+                    ctx.lineTo(7, 0.5)
+                    ctx.lineTo(7, 11.5)
+                    ctx.lineTo(3, 7.5)
+                    ctx.lineTo(0.5, 7.5)
+                    ctx.closePath()
+                    ctx.fill()
+
+                    if (muted) {
+                        ctx.beginPath()
+                        ctx.moveTo(10, 3)
+                        ctx.lineTo(15, 9)
+                        ctx.moveTo(15, 3)
+                        ctx.lineTo(10, 9)
+                        ctx.stroke()
+                    } else {
+                        const cx = 7.5, cy = 6
+                        const a0 = -Math.PI / 3.5, a1 = Math.PI / 3.5
+                        if (level > 0) {
+                            ctx.beginPath()
+                            ctx.arc(cx, cy, 3, a0, a1)
+                            ctx.stroke()
+                        }
+                        if (level > 0.5) {
+                            ctx.beginPath()
+                            ctx.arc(cx, cy, 5.5, a0, a1)
+                            ctx.stroke()
+                        }
+                    }
+                }
             }
 
             Bubble {
@@ -153,6 +210,92 @@ ShellRoot {
             }
 
             Bubble {
+                id: netBubble
+                anchors.right: audioBubble.left
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                width: netRow.width + 22
+
+                // "wifi" | "ethernet" | "none"
+                property string connType: "none"
+                property string connName: ""
+
+                function parseNm(raw) {
+                    let nextType = "none"
+                    let nextName = ""
+                    for (const line of raw.trim().split("\n")) {
+                        if (!line) continue
+                        const parts = line.split(":")
+                        const type = parts[0]
+                        const state = parts[1]
+                        const name = parts.slice(2).join(":")
+                        if (type === "loopback") continue
+                        if (state !== "connected") continue
+                        if (type === "wifi") {
+                            nextType = "wifi"
+                            nextName = name
+                            break
+                        }
+                        if (type === "ethernet" && nextType === "none") {
+                            nextType = "ethernet"
+                            nextName = name
+                        }
+                    }
+                    connType = nextType
+                    connName = nextName
+                }
+
+                Row {
+                    id: netRow
+                    anchors.centerIn: parent
+                    spacing: 6
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: netBubble.connType === "wifi" ? "📶"
+                            : netBubble.connType === "ethernet" ? "🌐"
+                            : "📡"
+                        color: "#e6e6f0"
+                        font.pixelSize: 13
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: netBubble.connType === "wifi" ? netBubble.connName
+                            : netBubble.connType === "ethernet" ? "Ethernet"
+                            : "Offline"
+                        color: "#e6e6f0"
+                        font.pixelSize: 13
+                        elide: Text.ElideRight
+                        width: Math.min(implicitWidth, 140)
+                    }
+                }
+
+                Process {
+                    id: netProc
+                    command: ["nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device", "status"]
+                    running: false
+                    stdout: StdioCollector {
+                        onStreamFinished: netBubble.parseNm(text)
+                    }
+                }
+
+                Timer {
+                    interval: 5000
+                    running: true
+                    repeat: true
+                    triggeredOnStart: true
+                    onTriggered: netProc.running = true
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: netPopup.visible = !netPopup.visible
+                }
+            }
+
+            Bubble {
                 id: audioBubble
                 anchors.right: parent.right
                 anchors.rightMargin: 10
@@ -169,15 +312,11 @@ ShellRoot {
                     anchors.centerIn: parent
                     spacing: 6
 
-                    Text {
+                    SpeakerIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: audioBubble.muted ? "🔇"
-                            : audioBubble.volPercent > 66 ? "🔊"
-                            : audioBubble.volPercent > 33 ? "🔉"
-                            : audioBubble.volPercent > 0  ? "🔈"
-                            : "🔇"
-                        color: "#e6e6f0"
-                        font.pixelSize: 13
+                        iconColor: "#e6e6f0"
+                        muted: audioBubble.muted
+                        level: audioBubble.vol
                     }
 
                     Text {
@@ -216,12 +355,319 @@ ShellRoot {
             PopupWindow {
                 id: audioPopup
                 anchor.window: bar
-                anchor.rect.x: bar.width - width - 10
-                anchor.rect.y: bar.height + 2
-                width: 300
-                height: popupContent.implicitHeight + 24
+                anchor.rect.x: bar.width - implicitWidth - 10
+                anchor.rect.y: bar.implicitHeight + 4
+                implicitWidth: 320
+                implicitHeight: popupContent.implicitHeight + 32
                 visible: false
                 color: "transparent"
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 20
+                    color: Qt.rgba(0.07, 0.07, 0.10, 0.80)
+                    border.color: Qt.rgba(1, 1, 1, 0.14)
+                    border.width: 1
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.leftMargin: parent.radius
+                        anchors.rightMargin: parent.radius
+                        anchors.topMargin: 1
+                        height: 1
+                        color: Qt.rgba(1, 1, 1, 0.10)
+                    }
+
+                    Column {
+                        id: popupContent
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 14
+
+                        Item {
+                            width: parent.width
+                            height: 32
+
+                            SpeakerIcon {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 22
+                                height: 17
+                                iconColor: audioBubble.muted ? "#777" : "#ffffff"
+                                muted: audioBubble.muted
+                                level: audioBubble.vol
+
+                                Behavior on iconColor { ColorAnimation { duration: 200 } }
+                            }
+
+                            Text {
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: audioBubble.volPercent + "%"
+                                color: audioBubble.muted ? "#777" : "#ffffff"
+                                font.pixelSize: 24
+                                font.family: "monospace"
+                                font.weight: Font.Light
+
+                                Behavior on color { ColorAnimation { duration: 200 } }
+                            }
+                        }
+
+                        Item {
+                            id: volSlider
+                            width: parent.width
+                            height: 18
+
+                            readonly property real fillWidth: track.width * audioBubble.vol
+
+                            Rectangle {
+                                id: track
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                height: 6
+                                radius: 3
+                                color: Qt.rgba(1, 1, 1, 0.08)
+
+                                Rectangle {
+                                    width: volSlider.fillWidth
+                                    height: parent.height
+                                    radius: 3
+                                    gradient: Gradient {
+                                        orientation: Gradient.Horizontal
+                                        GradientStop { position: 0; color: audioBubble.muted ? "#555" : "#8a99e8" }
+                                        GradientStop { position: 1; color: audioBubble.muted ? "#666" : "#c8a5e8" }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                id: thumb
+                                x: volSlider.fillWidth - width / 2
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 14
+                                height: 14
+                                radius: 7
+                                color: "#ffffff"
+                                border.color: Qt.rgba(0, 0, 0, 0.25)
+                                border.width: 1
+                                scale: sliderMa.pressed ? 1.15 : 1.0
+
+                                Behavior on scale {
+                                    NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                                }
+                            }
+
+                            MouseArea {
+                                id: sliderMa
+                                anchors.fill: parent
+                                anchors.topMargin: -6
+                                anchors.bottomMargin: -6
+                                cursorShape: Qt.PointingHandCursor
+                                onPressed: (m) => setVol(m.x)
+                                onPositionChanged: (m) => { if (pressed) setVol(m.x) }
+
+                                function setVol(x) {
+                                    if (!audioBubble.sink) return
+                                    audioBubble.sink.audio.volume = Math.max(0, Math.min(1, x / volSlider.width))
+                                }
+                            }
+                        }
+
+                        component SectionHeader: Item {
+                            property string label: ""
+                            width: popupContent.width
+                            height: 14
+
+                            Text {
+                                id: hdrLabel
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: parent.label
+                                color: "#7a7a88"
+                                font.pixelSize: 9
+                                font.weight: Font.Bold
+                                font.letterSpacing: 2
+                            }
+
+                            Rectangle {
+                                anchors.left: hdrLabel.right
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.leftMargin: 10
+                                height: 1
+                                color: Qt.rgba(1, 1, 1, 0.06)
+                            }
+                        }
+
+                        component DeviceRow: Rectangle {
+                            id: row
+                            property var node
+                            property bool isDefault: false
+                            signal activated
+
+                            width: popupContent.width
+                            height: 34
+                            radius: 11
+                            color: isDefault
+                                ? Qt.rgba(1, 1, 1, 0.09)
+                                : (rowMa.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
+
+                            Behavior on color { ColorAnimation { duration: 150 } }
+
+                            Rectangle {
+                                id: dot
+                                anchors.left: parent.left
+                                anchors.leftMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 8
+                                height: 8
+                                radius: 4
+                                color: row.isDefault ? "#a8b5e8" : "transparent"
+                                border.width: row.isDefault ? 0 : 1
+                                border.color: Qt.rgba(1, 1, 1, 0.22)
+
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                            }
+
+                            Text {
+                                anchors.left: dot.right
+                                anchors.right: parent.right
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: row.node?.description ?? row.node?.name ?? ""
+                                color: row.isDefault ? "#ffffff" : "#c0c0c8"
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                            }
+
+                            MouseArea {
+                                id: rowMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: row.activated()
+                            }
+                        }
+
+                        SectionHeader { label: "OUTPUT" }
+
+                        Repeater {
+                            model: Pipewire.nodes.values.filter(n => n.audio && n.isSink && !n.isStream)
+                            delegate: DeviceRow {
+                                required property var modelData
+                                node: modelData
+                                isDefault: modelData === Pipewire.defaultAudioSink
+                                onActivated: Pipewire.preferredDefaultAudioSink = modelData
+                            }
+                        }
+
+                        SectionHeader { label: "INPUT" }
+
+                        Repeater {
+                            model: Pipewire.nodes.values.filter(n => n.audio && !n.isSink && !n.isStream)
+                            delegate: DeviceRow {
+                                required property var modelData
+                                node: modelData
+                                isDefault: modelData === Pipewire.defaultAudioSource
+                                onActivated: Pipewire.preferredDefaultAudioSource = modelData
+                            }
+                        }
+                    }
+                }
+            }
+
+            PopupWindow {
+                id: netPopup
+                anchor.window: bar
+                anchor.rect.x: netBubble.x + netBubble.width - implicitWidth
+                anchor.rect.y: bar.implicitHeight + 2
+                implicitWidth: 320
+                implicitHeight: netPopupContent.implicitHeight + 24
+                visible: false
+                color: "transparent"
+
+                property var networks: []
+
+                onVisibleChanged: {
+                    if (visible) wifiListProc.running = true
+                }
+
+                // nmcli -t escapes ':' inside values as '\:' — split on unescaped colons
+                function splitNm(line) {
+                    const parts = []
+                    let cur = ""
+                    for (let i = 0; i < line.length; i++) {
+                        if (line[i] === "\\" && line[i + 1] === ":") {
+                            cur += ":"
+                            i++
+                        } else if (line[i] === ":") {
+                            parts.push(cur)
+                            cur = ""
+                        } else {
+                            cur += line[i]
+                        }
+                    }
+                    parts.push(cur)
+                    return parts
+                }
+
+                function parseWifi(raw) {
+                    const seen = new Map()
+                    for (const line of raw.trim().split("\n")) {
+                        if (!line) continue
+                        const p = splitNm(line)
+                        const ssid = p[1]
+                        if (!ssid) continue
+                        const sig = parseInt(p[2]) || 0
+                        if (!seen.has(ssid) || seen.get(ssid).signal < sig) {
+                            seen.set(ssid, {
+                                ssid: ssid,
+                                signal: sig,
+                                inUse: p[0] === "*",
+                                security: p[3] || ""
+                            })
+                        }
+                    }
+                    networks = Array.from(seen.values()).sort((a, b) => b.signal - a.signal)
+                }
+
+                function connectTo(ssid) {
+                    wifiConnectProc.command = ["nmcli", "device", "wifi", "connect", ssid]
+                    wifiConnectProc.running = true
+                }
+
+                Process {
+                    id: wifiListProc
+                    command: ["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "auto"]
+                    running: false
+                    stdout: StdioCollector {
+                        onStreamFinished: netPopup.parseWifi(text)
+                    }
+                }
+
+                Process {
+                    id: wifiConnectProc
+                    running: false
+                    onRunningChanged: {
+                        if (!running) {
+                            wifiListProc.running = true
+                            netProc.running = true
+                        }
+                    }
+                }
+
+                Timer {
+                    interval: 4000
+                    running: netPopup.visible
+                    repeat: true
+                    onTriggered: wifiListProc.running = true
+                }
 
                 Rectangle {
                     anchors.fill: parent
@@ -231,10 +677,10 @@ ShellRoot {
                     border.width: 1
 
                     Column {
-                        id: popupContent
+                        id: netPopupContent
                         anchors.fill: parent
                         anchors.margins: 12
-                        spacing: 12
+                        spacing: 10
 
                         Row {
                             width: parent.width
@@ -242,140 +688,136 @@ ShellRoot {
 
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: audioBubble.muted ? "🔇" : "🔊"
+                                text: netBubble.connType === "wifi" ? "📶"
+                                    : netBubble.connType === "ethernet" ? "🌐"
+                                    : "📡"
                                 font.pixelSize: 16
                                 color: "#e6e6f0"
                             }
 
-                            Item {
-                                id: volSlider
-                                width: parent.width - 80
-                                height: 18
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                Rectangle {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width
-                                    height: 4
-                                    radius: 2
-                                    color: Qt.rgba(1, 1, 1, 0.15)
-
-                                    Rectangle {
-                                        width: parent.width * audioBubble.vol
-                                        height: parent.height
-                                        radius: 2
-                                        color: audioBubble.muted ? "#666" : "#a8b5e8"
-                                    }
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onPressed: (m) => setVol(m.x)
-                                    onPositionChanged: (m) => { if (pressed) setVol(m.x) }
-
-                                    function setVol(x) {
-                                        if (!audioBubble.sink) return
-                                        audioBubble.sink.audio.volume = Math.max(0, Math.min(1, x / width))
-                                    }
-                                }
-                            }
-
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: audioBubble.volPercent + "%"
-                                color: "#e6e6f0"
-                                font.pixelSize: 12
-                                font.family: "monospace"
-                                width: 38
-                                horizontalAlignment: Text.AlignRight
+                                text: netBubble.connType === "wifi" ? netBubble.connName
+                                    : netBubble.connType === "ethernet" ? "Ethernet"
+                                    : "Disconnected"
+                                color: "#ffffff"
+                                font.pixelSize: 13
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        Item {
+                            width: parent.width
+                            height: 14
+
+                            Text {
+                                id: wifiHdr
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "WIFI"
+                                color: "#7a7a88"
+                                font.pixelSize: 9
+                                font.weight: Font.Bold
+                                font.letterSpacing: 2
+                            }
+
+                            Rectangle {
+                                anchors.left: wifiHdr.right
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.leftMargin: 10
+                                height: 1
+                                color: Qt.rgba(1, 1, 1, 0.06)
                             }
                         }
 
                         Text {
-                            text: "OUTPUT"
-                            color: "#8a8a98"
-                            font.pixelSize: 10
-                            font.weight: Font.Bold
-                            font.letterSpacing: 1
+                            visible: netPopup.networks.length === 0
+                            width: parent.width
+                            text: "No networks found"
+                            color: "#6a6a78"
+                            font.pixelSize: 12
+                            font.italic: true
+                            horizontalAlignment: Text.AlignHCenter
                         }
 
                         Repeater {
-                            model: Pipewire.nodes.values.filter(n => n.audio && n.isSink && !n.isStream)
+                            model: netPopup.networks
 
                             delegate: Rectangle {
-                                id: outItem
+                                id: netRow
                                 required property var modelData
-                                readonly property bool isDefault: modelData === Pipewire.defaultAudioSink
-
-                                width: popupContent.width
-                                height: 26
-                                radius: 8
-                                color: isDefault ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
+                                width: netPopupContent.width
+                                height: 34
+                                radius: 11
+                                color: modelData.inUse
+                                    ? Qt.rgba(1, 1, 1, 0.09)
+                                    : (netRowMa.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
 
                                 Behavior on color { ColorAnimation { duration: 150 } }
 
-                                Text {
+                                Rectangle {
+                                    id: sigDot
                                     anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.leftMargin: 10
-                                    anchors.rightMargin: 10
+                                    anchors.leftMargin: 12
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: outItem.modelData.description ?? outItem.modelData.name ?? ""
-                                    color: outItem.isDefault ? "#ffffff" : "#c0c0c8"
+                                    width: 8
+                                    height: 8
+                                    radius: 4
+                                    color: netRow.modelData.inUse ? "#a8b5e8" : "transparent"
+                                    border.width: netRow.modelData.inUse ? 0 : 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.22)
+
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
+
+                                Text {
+                                    anchors.left: sigDot.right
+                                    anchors.leftMargin: 10
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.right: sigBar.left
+                                    anchors.rightMargin: 10
+                                    text: netRow.modelData.ssid + (netRow.modelData.security ? "  🔒" : "")
+                                    color: netRow.modelData.inUse ? "#ffffff" : "#c0c0c8"
                                     font.pixelSize: 12
                                     elide: Text.ElideRight
                                 }
 
+                                Rectangle {
+                                    id: sigBar
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 28
+                                    height: 4
+                                    radius: 2
+                                    color: Qt.rgba(1, 1, 1, 0.10)
+
+                                    Rectangle {
+                                        width: parent.width * (netRow.modelData.signal / 100)
+                                        height: parent.height
+                                        radius: 2
+                                        color: "#a8b5e8"
+                                    }
+                                }
+
                                 MouseArea {
+                                    id: netRowMa
                                     anchors.fill: parent
+                                    hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Pipewire.preferredDefaultAudioSink = outItem.modelData
+                                    onClicked: netPopup.connectTo(netRow.modelData.ssid)
                                 }
                             }
                         }
 
                         Text {
-                            text: "INPUT"
-                            color: "#8a8a98"
+                            width: parent.width
+                            text: "Click to connect (saved or open networks).  Use nmtui for new secured ones."
+                            color: "#6a6a78"
                             font.pixelSize: 10
-                            font.weight: Font.Bold
-                            font.letterSpacing: 1
-                        }
-
-                        Repeater {
-                            model: Pipewire.nodes.values.filter(n => n.audio && !n.isSink && !n.isStream)
-
-                            delegate: Rectangle {
-                                id: inItem
-                                required property var modelData
-                                readonly property bool isDefault: modelData === Pipewire.defaultAudioSource
-
-                                width: popupContent.width
-                                height: 26
-                                radius: 8
-                                color: isDefault ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
-
-                                Behavior on color { ColorAnimation { duration: 150 } }
-
-                                Text {
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.leftMargin: 10
-                                    anchors.rightMargin: 10
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: inItem.modelData.description ?? inItem.modelData.name ?? ""
-                                    color: inItem.isDefault ? "#ffffff" : "#c0c0c8"
-                                    font.pixelSize: 12
-                                    elide: Text.ElideRight
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: Pipewire.preferredDefaultAudioSource = inItem.modelData
-                                }
-                            }
+                            wrapMode: Text.WordWrap
+                            topPadding: 4
                         }
                     }
                 }
