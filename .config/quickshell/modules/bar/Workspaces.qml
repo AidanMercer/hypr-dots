@@ -1,30 +1,53 @@
 import QtQuick
+import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Widgets
 import "../common"
 
 Bubble {
     id: root
-    width: wsRow.width + 10
+    width: wsRow.width + 12
 
     // The Hyprland monitor this bar lives on; each bar passes its own.
     required property var monitor
 
-    readonly property int wsPerPage: 5
+    // A fixed strip of workspaces 1..10 (no paging) — each slot shows the
+    // icon of an app living on that workspace, or a small dot when empty.
+    readonly property int wsCount: 10
     // This monitor's active workspace — not the global focus — so each
     // monitor's bar reflects the workspace it is actually showing.
     readonly property int activeWsId: monitor?.activeWorkspace?.id ?? 1
-    readonly property int wsPageStart: Math.floor((activeWsId - 1) / wsPerPage) * wsPerPage + 1
-    readonly property int activeIndex: activeWsId - wsPageStart
-    readonly property int pillWidth: 26
-    readonly property int pillSpacing: 4
 
+    readonly property int slotSize: 22
+    readonly property int slotSpacing: 4
+
+    // Keep the desktop-entry database alive. DesktopEntries.applications is a
+    // LAZY model: it only scans .desktop files while something is observing
+    // it, so heuristicLookup() returns null unless we hold a live binding to
+    // it. Declaring this property keeps that subscription open for the bar's
+    // lifetime. (Discovered the hard way — lookups silently fail without it.)
+    readonly property int _desktopEntriesKeepAlive: DesktopEntries.applications.values.length
+
+    // Resolve a window class to an icon URL, degrading gracefully:
+    //   desktop-entry icon  ->  the class name as an icon  ->  generic app
+    function iconForClass(cls) {
+        if (!cls)
+            return ""
+        const entry = DesktopEntries.heuristicLookup(cls)
+        const name = (entry && entry.icon) ? entry.icon : cls.toLowerCase()
+        return Quickshell.iconPath(name, "application-x-executable")
+    }
+
+    // Sliding highlight behind the active workspace. Hidden when the active
+    // workspace is outside the 1..10 strip (e.g. a special/scratch workspace).
     Rectangle {
         id: activeIndicator
-        width: root.pillWidth
-        height: 22
-        radius: 11
+        visible: root.activeWsId >= 1 && root.activeWsId <= root.wsCount
+        width: root.slotSize
+        height: root.slotSize
+        radius: height / 2
         anchors.verticalCenter: parent.verticalCenter
-        x: wsRow.x + root.activeIndex * (root.pillWidth + root.pillSpacing)
+        x: wsRow.x + (root.activeWsId - 1) * (root.slotSize + root.slotSpacing)
         color: Theme.glassBg
         border.color: Theme.glassBorder
         border.width: 1
@@ -37,43 +60,59 @@ Bubble {
     Row {
         id: wsRow
         anchors.centerIn: parent
-        spacing: root.pillSpacing
+        spacing: root.slotSpacing
 
         Repeater {
-            model: root.wsPerPage
+            model: root.wsCount
 
-            delegate: Rectangle {
-                id: wsItem
+            delegate: Item {
+                id: slot
                 required property int index
-                readonly property int wsId: root.wsPageStart + index
+                readonly property int wsId: index + 1
                 readonly property bool isActive: root.activeWsId === wsId
-                readonly property bool isOccupied: Hyprland.workspaces.values.some(ws => ws.id === wsId)
 
-                width: root.pillWidth
-                height: 22
-                radius: 11
-                color: !isActive && isOccupied
-                    ? Theme.occupiedFill
-                    : "transparent"
+                // Windows Hyprland reports on this workspace. Reading the
+                // toplevel list plus each window's .workspace registers them
+                // as dependencies, so this re-evaluates when a window opens,
+                // closes, or moves between workspaces.
+                readonly property var windowsHere: Hyprland.toplevels.values
+                    .filter(t => (t.workspace?.id ?? -1) === wsId)
+                readonly property bool isOccupied: windowsHere.length > 0
+                // Icon of the most recently added window on this workspace.
+                readonly property string iconSource: isOccupied
+                    ? root.iconForClass(windowsHere[windowsHere.length - 1].lastIpcObject?.class ?? "")
+                    : ""
 
-                Behavior on color { ColorAnimation { duration: 200 } }
+                width: root.slotSize
+                height: root.slotSize
 
-                Text {
+                // Empty workspace: a small dot.
+                Rectangle {
                     anchors.centerIn: parent
-                    text: wsItem.wsId
-                    color: wsItem.isActive
-                        ? Theme.textBright
-                        : (wsItem.isOccupied ? Theme.textPrimary : Theme.textMuted)
-                    font.pixelSize: 11
-                    font.weight: Font.Bold
-
+                    visible: !slot.isOccupied
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: slot.isActive ? Theme.textBright : Theme.textMuted
                     Behavior on color { ColorAnimation { duration: 200 } }
+                }
+
+                // Occupied workspace: the app icon. Dimmed slightly unless
+                // this is the active workspace.
+                IconImage {
+                    anchors.centerIn: parent
+                    visible: slot.isOccupied
+                    width: 16
+                    height: 16
+                    source: slot.iconSource
+                    opacity: slot.isActive ? 1.0 : 0.7
+                    Behavior on opacity { NumberAnimation { duration: 200 } }
                 }
 
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: Hyprland.dispatch(`workspace ${wsItem.wsId}`)
+                    onClicked: Hyprland.dispatch(`workspace ${slot.wsId}`)
                 }
             }
         }
