@@ -3,7 +3,7 @@ import Quickshell.Io
 import "../common"
 
 // Network tab: shows the active connection and a scannable wifi list.
-// `connType`/`connName` are fed in from ControlBubble (the always-on poll);
+// `connType`/`connName` are fed in from StatusButton (the always-on poll);
 // the wifi rescan only runs while `active` (this tab visible + popup open) to
 // avoid burning radio scans in the background.
 //
