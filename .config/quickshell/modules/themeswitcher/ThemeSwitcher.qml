@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -102,17 +101,7 @@ PanelWindow {
         closing = true
         closeHold.restart()
     }
-    Timer {
-        id: closeHold
-        interval: 260
-        onTriggered: {
-            root.closing = false
-            root.revealActive = false
-            root.applying = false
-            root.glyphSize = 0
-            root.fullFade = 0
-        }
-    }
+    Timer { id: closeHold; interval: 260; onTriggered: root.closing = false }
 
     // Wrapping increment/decrement → infinite carousel.
     function moveSel(delta) {
@@ -121,15 +110,6 @@ PanelWindow {
         else view.decrementCurrentIndex()
     }
 
-    // ---- apply: reveal the new wallpaper through a growing Arch logo ----
-    property string pendingWall: ""        // path passed to awww at the end
-    property string revealSource: ""       // file:// url shown in the reveal layer
-    property bool revealActive: false
-    property real glyphSize: 0             // animated 0 -> huge: the Arch logo growing
-    property real fullFade: 0              // final unmasked fade-in to fill the corners
-    // How big the glyph must grow so its solid area dominates the screen.
-    readonly property real glyphTarget: Math.max(width, height) * 2.4
-
     function applyTheme() {
         if (applying || themeModel.count === 0) return
         const i = view.currentIndex
@@ -137,38 +117,17 @@ PanelWindow {
         const t = themeModel.get(i)
         if (!t || !t.wallpaper) return
         applying = true
-        pendingWall = t.wallpaper
-        revealSource = root.fileUrl(t.wallpaper)
-        glyphSize = 0
-        fullFade = 0
-        revealActive = true
-        archReveal.restart()
-    }
-
-    // Grow the Arch logo, fade the corners in, set the real wallpaper instantly
-    // behind the now-complete reveal, then dismiss.
-    SequentialAnimation {
-        id: archReveal
-        NumberAnimation { target: root; property: "glyphSize"; from: 0; to: root.glyphTarget
-                          duration: 820; easing.type: Easing.InOutCubic }
-        NumberAnimation { target: root; property: "fullFade"; from: 0; to: 1
-                          duration: 260; easing.type: Easing.OutCubic }
-        ScriptAction { script: root.commitWallpaper() }
-        PauseAnimation { duration: 320 }       // let awww actually swap underneath
-        ScriptAction { script: root.closeMenu() }
-    }
-
-    function commitWallpaper() {
-        // Instant set (no awww animation) — the overlay already shows the new
-        // wallpaper everywhere, so this hand-off is invisible.
-        applyProc.command = ["awww", "img", "--transition-type", "none", pendingWall]
+        applyProc.command = ["awww", "img",
+            "--transition-type", "fade",
+            "--transition-duration", "0.7",
+            t.wallpaper]
         applyProc.running = true
     }
 
     Process {
         id: applyProc
         running: false
-        // Closing is driven by archReveal, not by awww exiting.
+        onExited: (code, status) => root.closeMenu()
     }
 
     IpcHandler {
@@ -330,61 +289,6 @@ PanelWindow {
                     }
                 }
             }
-        }
-    }
-
-    // ---- Arch-logo reveal layer (on top, only while applying) ----------
-    // The new wallpaper is drawn ONLY through the Arch glyph, which grows from
-    // nothing to fill the screen; a short unmasked fade then covers the corners
-    // the (triangular) logo can't reach. Sits above the filmstrip.
-    Item {
-        id: reveal
-        anchors.fill: parent
-        visible: root.revealActive
-
-        // Full-screen new wallpaper — hidden; used as the masked source.
-        Image {
-            id: revealWall
-            anchors.fill: parent
-            source: root.revealSource
-            fillMode: Image.PreserveAspectCrop
-            cache: true
-            visible: false
-        }
-
-        // The growing Arch glyph, rendered to a layer so it can be a mask.
-        Item {
-            id: archMask
-            anchors.fill: parent
-            visible: false
-            layer.enabled: true
-            Text {
-                anchors.centerIn: parent
-                text: String.fromCodePoint(0xF303)   // nf-linux-archlinux
-                font.family: Theme.icon              // Symbols Nerd Font
-                font.pixelSize: Math.max(1, root.glyphSize)
-                color: "white"
-                antialiasing: true
-            }
-        }
-
-        // Wallpaper masked by the glyph: visible only where the logo is.
-        MultiEffect {
-            anchors.fill: parent
-            source: revealWall
-            maskEnabled: true
-            maskSource: archMask
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 0.05
-        }
-
-        // Final unmasked fill so the screen corners complete the reveal.
-        Image {
-            anchors.fill: parent
-            source: root.revealSource
-            fillMode: Image.PreserveAspectCrop
-            cache: true
-            opacity: root.fullFade
         }
     }
 }
