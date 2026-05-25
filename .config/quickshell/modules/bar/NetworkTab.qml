@@ -6,6 +6,10 @@ import "../common"
 // `connType`/`connName` are fed in from ControlBubble (the always-on poll);
 // the wifi rescan only runs while `active` (this tab visible + popup open) to
 // avoid burning radio scans in the background.
+//
+// The wifi list is a fixed-height ListView so the tab (and therefore the
+// popup) stays the same size no matter how many networks are in range — you
+// scroll the list instead of growing the window.
 Item {
     id: root
     implicitHeight: col.implicitHeight
@@ -14,6 +18,9 @@ Item {
     property string connName: ""
     property bool active: false
     property var networks: []
+
+    // height of the scrollable wifi area (≈ 5 rows); keep this constant
+    readonly property int listHeight: 172
 
     signal connectionChanged()
 
@@ -146,81 +153,103 @@ Item {
             }
         }
 
-        Text {
-            visible: root.networks.length === 0
+        // ── fixed-height scrollable wifi list ──
+        Item {
             width: parent.width
-            text: "Scanning…"
-            color: Theme.textMuted
-            font.pixelSize: 12
-            font.italic: true
-            horizontalAlignment: Text.AlignHCenter
-        }
+            height: root.listHeight
 
-        Repeater {
-            model: root.networks
+            ListView {
+                id: list
+                anchors.fill: parent
+                clip: true
+                spacing: 2
+                model: root.networks
+                boundsBehavior: Flickable.StopAtBounds
 
-            delegate: Rectangle {
-                id: netRow
-                required property var modelData
-                width: col.width
-                height: 34
-                radius: 11
-                color: modelData.inUse
-                    ? Theme.rowSelected
-                    : (netRowMa.containsMouse ? Theme.rowHover : "transparent")
-                Behavior on color { ColorAnimation { duration: 150 } }
-
-                Rectangle {
-                    id: sigDot
-                    anchors.left: parent.left
-                    anchors.leftMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 8
-                    height: 8
-                    radius: 4
-                    color: netRow.modelData.inUse ? Theme.accent : "transparent"
-                    border.width: netRow.modelData.inUse ? 0 : 1
-                    border.color: Theme.dotBorder
+                delegate: Rectangle {
+                    id: netRow
+                    required property var modelData
+                    width: list.width
+                    height: 34
+                    radius: 11
+                    color: modelData.inUse
+                        ? Theme.rowSelected
+                        : (netRowMa.containsMouse ? Theme.rowHover : "transparent")
                     Behavior on color { ColorAnimation { duration: 150 } }
-                }
-
-                Text {
-                    anchors.left: sigDot.right
-                    anchors.leftMargin: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.right: sigBar.left
-                    anchors.rightMargin: 10
-                    text: netRow.modelData.ssid + (netRow.modelData.security ? "  " + String.fromCodePoint(0xF033E) : "")
-                    color: netRow.modelData.inUse ? Theme.textBright : Theme.textTertiary
-                    font.pixelSize: 12
-                    elide: Text.ElideRight
-                }
-
-                Rectangle {
-                    id: sigBar
-                    anchors.right: parent.right
-                    anchors.rightMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 28
-                    height: 4
-                    radius: 2
-                    color: Theme.trackBg2
 
                     Rectangle {
-                        width: parent.width * (netRow.modelData.signal / 100)
-                        height: parent.height
+                        id: sigDot
+                        anchors.left: parent.left
+                        anchors.leftMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 8
+                        height: 8
+                        radius: 4
+                        color: netRow.modelData.inUse ? Theme.accent : "transparent"
+                        border.width: netRow.modelData.inUse ? 0 : 1
+                        border.color: Theme.dotBorder
+                        Behavior on color { ColorAnimation { duration: 150 } }
+                    }
+
+                    Text {
+                        anchors.left: sigDot.right
+                        anchors.leftMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.right: sigBar.left
+                        anchors.rightMargin: 10
+                        text: netRow.modelData.ssid + (netRow.modelData.security ? "  " + String.fromCodePoint(0xF033E) : "")
+                        color: netRow.modelData.inUse ? Theme.textBright : Theme.textTertiary
+                        font.pixelSize: 12
+                        elide: Text.ElideRight
+                    }
+
+                    Rectangle {
+                        id: sigBar
+                        anchors.right: parent.right
+                        anchors.rightMargin: 14
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 28
+                        height: 4
                         radius: 2
-                        color: Theme.accent
+                        color: Theme.trackBg2
+
+                        Rectangle {
+                            width: parent.width * (netRow.modelData.signal / 100)
+                            height: parent.height
+                            radius: 2
+                            color: Theme.accent
+                        }
+                    }
+
+                    MouseArea {
+                        id: netRowMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.connectTo(netRow.modelData.ssid)
                     }
                 }
+            }
 
-                MouseArea {
-                    id: netRowMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.connectTo(netRow.modelData.ssid)
-                }
+            // slim scroll indicator, only when the list overflows
+            Rectangle {
+                visible: list.contentHeight > list.height
+                anchors.right: parent.right
+                width: 3
+                radius: 1.5
+                color: Theme.subtleDivider
+                y: list.visibleArea.yPosition * list.height
+                height: Math.max(24, list.visibleArea.heightRatio * list.height)
+            }
+
+            // empty state, centered in the list area
+            Text {
+                visible: root.networks.length === 0
+                anchors.centerIn: parent
+                text: "Scanning…"
+                color: Theme.textMuted
+                font.pixelSize: 12
+                font.italic: true
             }
         }
 
