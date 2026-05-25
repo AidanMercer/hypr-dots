@@ -3,33 +3,35 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
-import Quickshell.Widgets
 import "../common"
 
-// Fullscreen, transparent layer-shell overlay holding a coverflow of "themes".
-// A theme is just a folder under ~/.config/themes/<name>/ containing a
-// wallpaper.<ext>. Pick one and hit Enter to swap the wallpaper via `awww`.
+// Fullscreen, transparent layer-shell overlay holding a diagonal coverflow of
+// "themes" along the BOTTOM of the screen. A theme is a folder under
+// ~/.config/themes/<name>/ containing a wallpaper.<ext>. Browse with
+// arrows/scroll, hit Enter (or click a card) to swap the wallpaper via `awww`.
+// No Apply button, no screen dimming — selection is the commit.
 //
-// Built to mirror Launcher.qml: same PanelWindow + WlrLayershell + scrim +
-// IpcHandler shape. Opened/closed over IPC:
+// Layout is a PathView (not a ListView) for two reasons: it positions cards
+// along a path instead of reflowing a layout, so resizing the focused card
+// stays smooth; and it is circular by default, giving an infinite carousel.
+//
+// Each card's FRAME is sheared into a parallelogram (clip:true), while the
+// wallpaper image inside is counter-sheared by the opposite amount about the
+// same centre — the two shears cancel, so the picture renders perfectly
+// upright inside the slanted, clipped window. The current card is wide; the
+// rest are thin slivers, all driven by per-stop Path attributes.
+//
+// Opened/closed over IPC:
 //   qs ipc call themeSwitcher toggle   (wired to Super+Shift+T in hyprland.conf)
 //
 // First increment is deliberately wallpaper-only — no colour regeneration.
-// The hand-picked Theme.qml palette stays put.
 PanelWindow {
     id: root
 
     property bool open: false
-    // True from the moment Enter is pressed until the window closes; used to
-    // fade the carousel away while awww does its cross-fade underneath.
-    property bool applying: false
-    // Kept true through the close fade so the window stays mapped long enough
-    // for the dim/scrim to animate out (same trick as the launcher).
-    property bool closing: false
+    property bool applying: false      // Enter/click → close; fades strip out
+    property bool closing: false       // keep mapped through the close fade
 
-    // Pin to the focused monitor at open() time so a wandering cursor can't
-    // remap the surface mid-use. awww still swaps the wallpaper on every
-    // output; only this UI is single-monitor.
     property var targetScreen: null
     screen: targetScreen
 
@@ -38,18 +40,23 @@ PanelWindow {
     WlrLayershell.keyboardFocus: open ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     anchors { top: true; bottom: true; left: true; right: true }
-    // Cover the whole output, including the strip under the bar.
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
     visible: open || closing
 
+    // ---- card geometry -------------------------------------------------
+    readonly property real centreWidth: 450    // focused card width
+    readonly property real sideWidth: 150       // sliver width
+    readonly property real centreHeight: 390
+    readonly property real sideHeight: 360
+    readonly property real skewFactor: -0.32    // leans the frame like "/"
+    // Image is oversized so the counter-shear never exposes an edge.
+    readonly property real imgW: centreWidth + (centreHeight * Math.abs(skewFactor)) + 60
+    readonly property real imgH: centreHeight
+
     // ---- data ----------------------------------------------------------
-    property int selectedIndex: 0
     ListModel { id: themeModel }
 
-    // Build "name\tpath" lines, one per theme folder that has a wallpaper.<ext>.
-    // nullglob keeps the loop from running on a literal glob when the folder
-    // is missing/empty; we stop at the first matching extension per theme.
     Process {
         id: scanProc
         running: false
@@ -71,8 +78,6 @@ PanelWindow {
             if (parts.length >= 2)
                 themeModel.append({ name: parts[0], wallpaper: parts[1] })
         }
-        if (root.selectedIndex >= themeModel.count)
-            root.selectedIndex = Math.max(0, themeModel.count - 1)
     }
 
     // Encode each path segment so spaces ("your name/") survive the file URL.
@@ -86,10 +91,9 @@ PanelWindow {
         targetScreen = m ? (Quickshell.screens.find(s => s.name === m.name) ?? null) : null
         applying = false
         closing = false
-        selectedIndex = 0
         open = true
         scanProc.running = true            // rescan each open so new folders show
-        Qt.callLater(keyCatcher.forceActiveFocus)
+        Qt.callLater(() => { view.currentIndex = 0; keyCatcher.forceActiveFocus() })
     }
     function closeMenu() {
         if (!open) return
@@ -97,20 +101,22 @@ PanelWindow {
         closing = true
         closeHold.restart()
     }
-    Timer { id: closeHold; interval: 240; onTriggered: root.closing = false }
+    Timer { id: closeHold; interval: 260; onTriggered: root.closing = false }
 
+    // Wrapping increment/decrement → infinite carousel.
     function moveSel(delta) {
         if (themeModel.count === 0) return
-        // Wrap around the ends, like a real carousel.
-        selectedIndex = (selectedIndex + delta + themeModel.count) % themeModel.count
+        if (delta > 0) view.incrementCurrentIndex()
+        else view.decrementCurrentIndex()
     }
 
     function applyTheme() {
         if (applying || themeModel.count === 0) return
-        const t = themeModel.get(selectedIndex)
+        const i = view.currentIndex
+        if (i < 0 || i >= themeModel.count) return
+        const t = themeModel.get(i)
         if (!t || !t.wallpaper) return
         applying = true
-        // No setsid: let onExited fire when awww has handed off the swap.
         applyProc.command = ["awww", "img",
             "--transition-type", "fade",
             "--transition-duration", "0.7",
@@ -121,8 +127,6 @@ PanelWindow {
     Process {
         id: applyProc
         running: false
-        // awww returns as soon as the daemon accepts the image; the fade then
-        // plays on the desktop. Close the overlay so it's revealed underneath.
         onExited: (code, status) => root.closeMenu()
     }
 
@@ -145,38 +149,23 @@ PanelWindow {
         }
     }
 
-    // ---- dim backdrop (click-outside to cancel) ------------------------
-    Rectangle {
+    // ---- transparent click-outside-to-cancel (no dimming) --------------
+    MouseArea {
         anchors.fill: parent
-        color: Qt.rgba(0, 0, 0, 0.42)
-        opacity: root.open ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-        MouseArea {
-            anchors.fill: parent
-            onClicked: if (!root.applying) root.closeMenu()
-        }
+        onClicked: if (!root.applying) root.closeMenu()
     }
 
-    // ---- foreground content (title / carousel / hint) ------------------
+    // ---- the bottom filmstrip ------------------------------------------
     Item {
         id: content
         anchors.fill: parent
         opacity: root.open && !root.applying ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
         Text {
-            id: title
             anchors.horizontalCenter: parent.horizontalCenter
-            y: parent.height * 0.16
-            text: "Themes"
-            color: Theme.textBright
-            font.pixelSize: 24
-            font.weight: Font.DemiBold
-        }
-
-        // ---- empty state ----
-        Text {
-            anchors.centerIn: parent
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: parent.height * 0.22
             visible: themeModel.count === 0
             horizontalAlignment: Text.AlignHCenter
             color: Theme.textSecondary
@@ -184,156 +173,122 @@ PanelWindow {
             text: "No themes found.\nDrop a folder with a wallpaper.<ext> into ~/.config/themes/"
         }
 
-        // ---- coverflow ----
         PathView {
-            id: pv
-            anchors.centerIn: parent
-            width: Math.min(parent.width, 1100)
-            height: 320
+            id: view
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: Math.round(parent.height * 0.09)
+            height: root.centreHeight + 70
             visible: themeModel.count > 0
+
             model: themeModel
-            pathItemCount: 3
+            pathItemCount: 7
             preferredHighlightBegin: 0.5
             preferredHighlightEnd: 0.5
             highlightRangeMode: PathView.StrictlyEnforceRange
             snapMode: PathView.SnapToItem
-            // Two-way bind to selectedIndex so keyboard and drag stay in sync.
-            currentIndex: root.selectedIndex
-            onCurrentIndexChanged: root.selectedIndex = currentIndex
+            highlightMoveDuration: 320
+            interactive: false                 // driven by keys / wheel
 
+            // Straight horizontal path; cards interpolate width/height/opacity
+            // between the dim thin edges and the wide bright centre.
             path: Path {
-                startX: pv.width * 0.13; startY: pv.height / 2
-                PathAttribute { name: "iz";     value: 0 }
-                PathAttribute { name: "iscale"; value: 0.66 }
-                PathAttribute { name: "iopac";  value: 0.38 }
-                PathLine { x: pv.width * 0.5; y: pv.height / 2 }
-                PathAttribute { name: "iz";     value: 2 }
-                PathAttribute { name: "iscale"; value: 1.0 }
-                PathAttribute { name: "iopac";  value: 1.0 }
-                PathLine { x: pv.width * 0.87; y: pv.height / 2 }
-                PathAttribute { name: "iz";     value: 0 }
-                PathAttribute { name: "iscale"; value: 0.66 }
-                PathAttribute { name: "iopac";  value: 0.38 }
+                startX: 0; startY: view.height / 2
+                PathAttribute { name: "iwide"; value: root.sideWidth }
+                PathAttribute { name: "ihigh"; value: root.sideHeight }
+                PathAttribute { name: "iopac"; value: 0.5 }
+                PathAttribute { name: "iz";    value: 0 }
+                PathLine { x: view.width / 2; y: view.height / 2 }
+                PathAttribute { name: "iwide"; value: root.centreWidth }
+                PathAttribute { name: "ihigh"; value: root.centreHeight }
+                PathAttribute { name: "iopac"; value: 1.0 }
+                PathAttribute { name: "iz";    value: 10 }
+                PathLine { x: view.width; y: view.height / 2 }
+                PathAttribute { name: "iwide"; value: root.sideWidth }
+                PathAttribute { name: "ihigh"; value: root.sideHeight }
+                PathAttribute { name: "iopac"; value: 0.5 }
+                PathAttribute { name: "iz";    value: 0 }
             }
+
+            // Scroll wheel without swallowing clicks (NoButton).
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.NoButton
+                property int accum: 0
+                onWheel: (wheel) => {
+                    if (root.applying) { wheel.accepted = true; return }
+                    if (wheelThrottle.running) { wheel.accepted = true; return }
+                    const dy = wheel.angleDelta.y
+                    const dx = wheel.angleDelta.x
+                    const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy
+                    accum += delta
+                    if (Math.abs(accum) >= 120) {
+                        root.moveSel(accum > 0 ? -1 : 1)
+                        accum = 0
+                        wheelThrottle.start()
+                    }
+                    wheel.accepted = true
+                }
+            }
+            Timer { id: wheelThrottle; interval: 130 }
 
             delegate: Item {
                 id: card
                 required property string name
                 required property string wallpaper
                 required property int index
-                width: 300
-                height: 300
+                // PathView positions us by our centre; size/opacity come from
+                // the interpolated path attributes (no layout reflow → smooth).
+                width: PathView.iwide ?? root.sideWidth
+                height: PathView.ihigh ?? root.sideHeight
+                opacity: PathView.iopac ?? 0.5
                 z: PathView.iz ?? 0
-                scale: PathView.iscale ?? 0.66
-                opacity: PathView.iopac ?? 0.38
-                Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
-                ClippingRectangle {
+                // Sheared parallelogram frame; clip masks the upright image to it.
+                Item {
+                    id: frame
                     anchors.fill: parent
-                    radius: 22
-                    color: Theme.glassBg
-                    border.width: card.PathView.isCurrentItem ? 2 : 1
-                    border.color: card.PathView.isCurrentItem ? Theme.accent : Theme.glassBorder
+                    clip: true
+                    transform: Matrix4x4 {
+                        // Centred shear: x' = x + s*(y - h/2).
+                        readonly property real s: root.skewFactor
+                        matrix: Qt.matrix4x4(1, s, 0, -s * frame.height / 2,
+                                             0, 1, 0, 0,
+                                             0, 0, 1, 0,
+                                             0, 0, 0, 1)
+                    }
 
                     Image {
-                        anchors.fill: parent
-                        source: root.fileUrl(card.wallpaper)
+                        anchors.centerIn: parent
+                        width: root.imgW
+                        height: root.imgH
                         fillMode: Image.PreserveAspectCrop
+                        source: root.fileUrl(card.wallpaper)
                         asynchronous: true
                         cache: true
-                    }
-
-                    // bottom gradient so the label stays legible on any wallpaper
-                    Rectangle {
-                        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                        height: 70
-                        gradient: Gradient {
-                            GradientStop { position: 0; color: "transparent" }
-                            GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.58) }
+                        smooth: true
+                        mipmap: true
+                        transform: Matrix4x4 {
+                            // Opposite shear about the image centre → cancels
+                            // the frame shear, so the picture stays upright.
+                            readonly property real s: -root.skewFactor
+                            matrix: Qt.matrix4x4(1, s, 0, -s * root.imgH / 2,
+                                                 0, 1, 0, 0,
+                                                 0, 0, 1, 0,
+                                                 0, 0, 0, 1)
                         }
                     }
-                    Text {
-                        anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 14 }
-                        text: card.name
-                        color: Theme.textBright
-                        font.pixelSize: 17
-                        font.weight: Font.Medium
-                        elide: Text.ElideRight
-                    }
-                }
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (card.PathView.isCurrentItem) root.applyTheme()
-                        else root.selectedIndex = card.index
-                    }
-                }
-            }
-        }
-
-        // ---- hint + buttons ----
-        Column {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: parent.height * 0.14
-            spacing: 16
-            visible: themeModel.count > 0
-
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 12
-
-                // Cancel
-                Rectangle {
-                    width: 110; height: 40; radius: 20
-                    color: cancelMa.containsMouse ? Theme.rowSelected : Theme.glassBg
-                    border.color: Theme.glassBorder
-                    border.width: 1
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Cancel"
-                        color: Theme.textSecondary
-                        font.pixelSize: 14
-                    }
                     MouseArea {
-                        id: cancelMa
                         anchors.fill: parent
-                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.closeMenu()
+                        onClicked: {
+                            if (card.PathView.isCurrentItem) root.applyTheme()
+                            else view.currentIndex = card.index
+                        }
                     }
                 }
-
-                // Apply
-                Rectangle {
-                    width: 130; height: 40; radius: 20
-                    color: applyMa.containsMouse ? Qt.lighter(Theme.accent, 1.08) : Theme.accent
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Apply"
-                        color: "#1a1a22"
-                        font.pixelSize: 14
-                        font.weight: Font.DemiBold
-                    }
-                    MouseArea {
-                        id: applyMa
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.applyTheme()
-                    }
-                }
-            }
-
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "←  →  browse     ·     Enter  apply     ·     Esc  cancel"
-                color: Theme.textMuted
-                font.pixelSize: 12
             }
         }
     }
