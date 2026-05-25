@@ -6,10 +6,15 @@ Bubble {
     id: root
     width: wsRow.width + 10
 
+    // The Hyprland monitor this bar lives on; each bar passes its own.
+    required property var monitor
+
     readonly property int wsPerPage: 5
-    readonly property int focusedWsId: Hyprland.focusedWorkspace?.id ?? 1
-    readonly property int wsPageStart: Math.floor((focusedWsId - 1) / wsPerPage) * wsPerPage + 1
-    readonly property int activeIndex: focusedWsId - wsPageStart
+    // This monitor's active workspace — not the global focus — so each
+    // monitor's bar reflects the workspace it is actually showing.
+    readonly property int activeWsId: monitor?.activeWorkspace?.id ?? 1
+    readonly property int wsPageStart: Math.floor((activeWsId - 1) / wsPerPage) * wsPerPage + 1
+    readonly property int activeIndex: activeWsId - wsPageStart
     readonly property int pillWidth: 26
     readonly property int pillSpacing: 4
 
@@ -41,7 +46,7 @@ Bubble {
                 id: wsItem
                 required property int index
                 readonly property int wsId: root.wsPageStart + index
-                readonly property bool isActive: Hyprland.focusedWorkspace?.id === wsId
+                readonly property bool isActive: root.activeWsId === wsId
                 readonly property bool isOccupied: Hyprland.workspaces.values.some(ws => ws.id === wsId)
 
                 width: root.pillWidth
