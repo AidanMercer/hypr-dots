@@ -1,13 +1,17 @@
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import "../common"
 
-// Single popup with a segmented tab bar switching between Network, Sound,
-// Bluetooth and Power tabs. Anchored centered under the StatusButton (just
-// right of the workspaces). A small header above the tabs shows the Arch glyph
-// and uptime. The window height tracks whichever tab is visible (a Column drops
-// invisible children from its implicit size), so the card resizes per tab.
-PopupWindow {
+// Fullscreen, transparent layer-shell overlay holding the status card (Network
+// / Sound / Bluetooth / Power, with an uptime header). The card is positioned
+// just under the bar, centred on the StatusButton; clicking anywhere on the
+// surrounding scrim dismisses it.
+//
+// We use a scrim rather than HyprlandFocusGrab because the grab races the
+// popup's mapping and often fails to attach (so click-outside never closes it).
+// The Launcher uses this same proven scrim pattern.
+PanelWindow {
     id: root
 
     property var barWindow
@@ -22,13 +26,19 @@ PopupWindow {
     property string uptimeText: ""
     signal connectionChanged()
 
-    anchor.window: barWindow
-    anchor.rect.x: anchorCenterX - implicitWidth / 2
-    anchor.rect.y: barWindow ? barWindow.implicitHeight + 4 : 0
-    implicitWidth: 360
-    implicitHeight: content.implicitHeight + 32
-    visible: open || exitTrans.running
+    // Appear on the same monitor as the bar that owns this popup.
+    screen: barWindow ? barWindow.screen : null
+
+    WlrLayershell.namespace: "quickshell-control-popup"
+    WlrLayershell.layer: WlrLayer.Overlay
+
+    anchors { top: true; bottom: true; left: true; right: true }
+    // Cover the full output (including the strip under the bar) so a click
+    // anywhere outside the card is caught.
+    exclusionMode: ExclusionMode.Ignore
     color: "transparent"
+    // Stay mapped through the close animation, like the launcher.
+    visible: open || exitTrans.running
 
     readonly property string iconArch: String.fromCodePoint(0xF303) // nf-linux-archlinux
 
@@ -39,9 +49,20 @@ PopupWindow {
         { label: "Power",     glyph: 0xF0425 }
     ]
 
+    // ── scrim: transparent (no dimming), click-outside to dismiss ──
+    MouseArea {
+        anchors.fill: parent
+        enabled: root.open
+        onClicked: root.open = false
+    }
+
     Item {
         id: morph
-        anchors.fill: parent
+        width: card.width
+        height: card.height
+        // Centre the card under the button, clamped to stay on-screen.
+        x: Math.max(8, Math.min(root.width - width - 8, root.anchorCenterX - width / 2))
+        y: Theme.barHeight + 4
         opacity: 0
         scale: 0.78
         transformOrigin: Item.Top
@@ -71,11 +92,16 @@ PopupWindow {
         ]
 
         Rectangle {
-            anchors.fill: parent
+            id: card
+            width: 360
+            height: content.implicitHeight + 32
             radius: Theme.popupRadius
             color: Theme.glassBg
             border.color: Theme.glassBorder
             border.width: 1
+
+            // Swallow clicks on the card so they don't fall through to the scrim.
+            MouseArea { anchors.fill: parent }
 
             Rectangle {
                 anchors.left: parent.left

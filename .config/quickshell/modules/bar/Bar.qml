@@ -59,10 +59,4 @@ PanelWindow {
         uptimeText: statusButton.uptimeText
         onConnectionChanged: statusButton.refresh()
     }
-
-    HyprlandFocusGrab {
-        windows: [controlPopup]
-        active: controlPopup.open
-        onCleared: controlPopup.open = false
-    }
 }
