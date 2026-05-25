@@ -25,7 +25,9 @@ PanelWindow {
     WlrLayershell.keyboardFocus: open ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     anchors { top: true; bottom: true; left: true; right: true }
-    exclusiveZone: 0
+    // Ignore the bar's exclusive zone so the scrim covers the full output,
+    // including the strip under the bar (otherwise the top 44px stays bright).
+    exclusionMode: ExclusionMode.Ignore
     color: "transparent"
     // Stay mapped during the close animation, mirroring the popups.
     visible: open || exitTrans.running
@@ -75,9 +77,8 @@ PanelWindow {
 
     IpcHandler {
         target: "launcher"
+        // Only `toggle` is wired to a key (Super tap / Super+R in hyprland.conf).
         function toggle(): void { root.open ? root.closeMenu() : root.openMenu() }
-        function show(): void { root.openMenu() }
-        function hide(): void { root.closeMenu() }
     }
 
     // ---- scrim (click-outside to dismiss) ------------------------------
