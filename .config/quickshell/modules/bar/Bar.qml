@@ -25,8 +25,15 @@ PanelWindow {
     }
 
     DateBubble {
+        id: dateBubble
         anchors.left: parent.left
         anchors.leftMargin: 10
+        anchors.verticalCenter: parent.verticalCenter
+    }
+
+    UptimeBubble {
+        anchors.left: dateBubble.right
+        anchors.leftMargin: 8
         anchors.verticalCenter: parent.verticalCenter
     }
 
@@ -36,46 +43,47 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
     }
 
-    NetBubble {
-        id: netBubble
-        anchors.right: audioBubble.left
+    ControlBubble {
+        id: controlBubble
+        anchors.right: powerButton.left
         anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter
-        onPopupToggleRequested: netPopup.open = !netPopup.open
+        onPopupToggleRequested: controlPopup.open = !controlPopup.open
     }
 
-    AudioBubble {
-        id: audioBubble
+    PowerButton {
+        id: powerButton
+        active: powerMenu.open
         anchors.right: parent.right
         anchors.rightMargin: 10
         anchors.verticalCenter: parent.verticalCenter
-        onPopupToggleRequested: audioPopup.open = !audioPopup.open
+        onToggleRequested: powerMenu.open = !powerMenu.open
     }
 
-    AudioPopup {
-        id: audioPopup
+    ControlPopup {
+        id: controlPopup
         barWindow: bar
-        bubbleRight: audioBubble.x + audioBubble.width
+        anchorRight: controlBubble.x + controlBubble.width
+        connType: controlBubble.connType
+        connName: controlBubble.connName
+        onConnectionChanged: controlBubble.refresh()
     }
 
-    NetPopup {
-        id: netPopup
+    PowerMenu {
+        id: powerMenu
         barWindow: bar
-        bubbleRight: netBubble.x + netBubble.width
-        connType: netBubble.connType
-        connName: netBubble.connName
-        onConnectionChanged: netBubble.refresh()
+        anchorRight: powerButton.x + powerButton.width
     }
 
     HyprlandFocusGrab {
-        windows: [audioPopup]
-        active: audioPopup.open
-        onCleared: audioPopup.open = false
+        windows: [controlPopup]
+        active: controlPopup.open
+        onCleared: controlPopup.open = false
     }
 
     HyprlandFocusGrab {
-        windows: [netPopup]
-        active: netPopup.open
-        onCleared: netPopup.open = false
+        windows: [powerMenu]
+        active: powerMenu.open
+        onCleared: powerMenu.open = false
     }
 }
