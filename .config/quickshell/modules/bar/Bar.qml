@@ -31,6 +31,7 @@ PanelWindow {
     }
 
     Workspaces {
+        monitor: Hyprland.monitorFor(bar.screen)
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
     }
