@@ -28,6 +28,14 @@ Bubble {
     // lifetime. (Discovered the hard way — lookups silently fail without it.)
     readonly property int _desktopEntriesKeepAlive: DesktopEntries.applications.values.length
 
+    // Hyprland.workspaces and .monitors auto-populate, but Hyprland.toplevels
+    // does NOT: it stays empty until refreshToplevels() is called or a window
+    // event fires. At login the bar starts with windows already open and no
+    // event incoming, so without this kick every slot reads as unoccupied and
+    // shows a dot — no app icons ever appear. One refresh seeds the model;
+    // Hyprland's open/close/move events keep it in sync afterward.
+    Component.onCompleted: Hyprland.refreshToplevels()
+
     // Resolve a window class to an icon URL, degrading gracefully:
     //   desktop-entry icon  ->  the class name as an icon  ->  generic app
     function iconForClass(cls) {
