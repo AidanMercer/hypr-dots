@@ -1,0 +1,25 @@
+# packages.txt — packages this rice depends on.
+# Install repo packages with pacman, AUR packages with paru.
+#   sudo pacman -S --needed $(grep -v '^#' packages.txt | sed -n '/^\[repo\]/,/^\[aur\]/p' | grep -v '^\[')
+#   paru -S --needed       $(grep -v '^#' packages.txt | sed -n '/^\[aur\]/,$p'        | grep -v '^\[')
+# (or just read it by eye — it's a plain list.)
+
+[repo]
+hyprland
+kitty
+fuzzel
+awww
+quickshell
+hyprlock
+hypridle
+hyprshot
+cliphist
+brightnessctl
+pipewire
+pipewire-pulse
+wireplumber
+
+[aur]
+paru
+zen-browser-bin
+bibata-cursor-theme-bin
