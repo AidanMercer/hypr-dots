@@ -110,6 +110,14 @@ PanelWindow {
         else view.decrementCurrentIndex()
     }
 
+    // A curated set of the flashy awww transitions; one is rolled at random on
+    // each apply so the swap feels different every time (plain fade/simple are
+    // intentionally left out). grow/outer/center radiate a circle from a point;
+    // wipe/wave sweep across at an angle.
+    readonly property var coolTransitions: ["grow", "outer", "center", "wipe", "wave"]
+    readonly property var growSpots: ["0.5,0.5", "0.0,0.0", "1.0,1.0", "0.0,1.0", "1.0,0.0"]
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)] }
+
     function applyTheme() {
         if (applying || themeModel.count === 0) return
         const i = view.currentIndex
@@ -117,10 +125,18 @@ PanelWindow {
         const t = themeModel.get(i)
         if (!t || !t.wallpaper) return
         applying = true
-        applyProc.command = ["awww", "img",
-            "--transition-type", "fade",
-            "--transition-duration", "0.7",
-            t.wallpaper]
+
+        const tr = pick(coolTransitions)
+        let cmd = ["awww", "img",
+            "--transition-type", tr,
+            "--transition-fps", "144",
+            "--transition-duration", "1.1",
+            "--transition-pos", pick(growSpots)]    // used by grow/outer/center
+        if (tr === "wipe" || tr === "wave")
+            cmd.push("--transition-angle", String(pick([0, 45, 90, 135])))
+        cmd.push(t.wallpaper)
+
+        applyProc.command = cmd
         applyProc.running = true
     }
 
