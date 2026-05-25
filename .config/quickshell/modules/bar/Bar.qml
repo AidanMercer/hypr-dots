@@ -31,59 +31,38 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
     }
 
-    UptimeBubble {
-        anchors.left: dateBubble.right
-        anchors.leftMargin: 8
-        anchors.verticalCenter: parent.verticalCenter
-    }
-
     Workspaces {
+        id: workspaces
         monitor: Hyprland.monitorFor(bar.screen)
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
     }
 
-    ControlBubble {
-        id: controlBubble
-        anchors.right: powerButton.left
-        anchors.rightMargin: 8
+    // Single status button just right of the workspaces. Opens the ControlPopup
+    // (network / sound / bluetooth / power) and owns the uptime + network status
+    // the popup displays.
+    StatusButton {
+        id: statusButton
+        active: controlPopup.open
+        anchors.left: workspaces.right
+        anchors.leftMargin: 8
         anchors.verticalCenter: parent.verticalCenter
         onPopupToggleRequested: controlPopup.open = !controlPopup.open
-    }
-
-    PowerButton {
-        id: powerButton
-        active: powerMenu.open
-        anchors.right: parent.right
-        anchors.rightMargin: 10
-        anchors.verticalCenter: parent.verticalCenter
-        onToggleRequested: powerMenu.open = !powerMenu.open
     }
 
     ControlPopup {
         id: controlPopup
         barWindow: bar
-        anchorRight: controlBubble.x + controlBubble.width
-        connType: controlBubble.connType
-        connName: controlBubble.connName
-        onConnectionChanged: controlBubble.refresh()
-    }
-
-    PowerMenu {
-        id: powerMenu
-        barWindow: bar
-        anchorRight: powerButton.x + powerButton.width
+        anchorCenterX: statusButton.x + statusButton.width / 2
+        connType: statusButton.connType
+        connName: statusButton.connName
+        uptimeText: statusButton.uptimeText
+        onConnectionChanged: statusButton.refresh()
     }
 
     HyprlandFocusGrab {
         windows: [controlPopup]
         active: controlPopup.open
         onCleared: controlPopup.open = false
-    }
-
-    HyprlandFocusGrab {
-        windows: [powerMenu]
-        active: powerMenu.open
-        onCleared: powerMenu.open = false
     }
 }

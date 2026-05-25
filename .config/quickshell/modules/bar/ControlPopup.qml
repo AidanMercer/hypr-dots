@@ -2,35 +2,41 @@ import QtQuick
 import Quickshell
 import "../common"
 
-// Single popup with a segmented tab bar switching between Network, Sound and
-// Bluetooth tabs. Anchored under the combined ControlBubble on the right edge.
-// The window height tracks whichever tab is visible (a Column drops invisible
-// children from its implicit size), so the card resizes per tab.
+// Single popup with a segmented tab bar switching between Network, Sound,
+// Bluetooth and Power tabs. Anchored centered under the StatusButton (just
+// right of the workspaces). A small header above the tabs shows the Arch glyph
+// and uptime. The window height tracks whichever tab is visible (a Column drops
+// invisible children from its implicit size), so the card resizes per tab.
 PopupWindow {
     id: root
 
     property var barWindow
-    property real anchorRight: 0
+    property real anchorCenterX: 0
     property bool open: false
-    property int currentTab: 0  // 0 = network, 1 = sound, 2 = bluetooth
+    property int currentTab: 0  // 0 = network, 1 = sound, 2 = bluetooth, 3 = power
 
-    // network status passed through from the bubble into the Network tab
+    // network status passed through from the StatusButton into the Network tab
     property string connType: "none"
     property string connName: ""
+    // uptime string passed through from the StatusButton into the header
+    property string uptimeText: ""
     signal connectionChanged()
 
     anchor.window: barWindow
-    anchor.rect.x: anchorRight - implicitWidth
+    anchor.rect.x: anchorCenterX - implicitWidth / 2
     anchor.rect.y: barWindow ? barWindow.implicitHeight + 4 : 0
-    implicitWidth: 340
+    implicitWidth: 360
     implicitHeight: content.implicitHeight + 32
     visible: open || exitTrans.running
     color: "transparent"
 
+    readonly property string iconArch: String.fromCodePoint(0xF303) // nf-linux-archlinux
+
     readonly property var tabs: [
         { label: "Network",   glyph: 0xF05A9 },
         { label: "Sound",     glyph: 0xF057E },
-        { label: "Bluetooth", glyph: 0xF00AF }
+        { label: "Bluetooth", glyph: 0xF00AF },
+        { label: "Power",     glyph: 0xF0425 }
     ]
 
     Item {
@@ -38,7 +44,7 @@ PopupWindow {
         anchors.fill: parent
         opacity: 0
         scale: 0.78
-        transformOrigin: Item.TopRight
+        transformOrigin: Item.Top
 
         states: State {
             name: "shown"
@@ -87,6 +93,28 @@ PopupWindow {
                 anchors.fill: parent
                 anchors.margins: 16
                 spacing: 14
+
+                // ── header: Arch glyph + uptime ──
+                Row {
+                    width: parent.width
+                    spacing: 8
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.iconArch
+                        color: Theme.accent
+                        font.family: Theme.icon
+                        font.pixelSize: 16
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.uptimeText
+                        color: Theme.textSecondary
+                        font.pixelSize: 12
+                        font.family: Theme.mono
+                    }
+                }
 
                 // ── segmented tab bar ──
                 Row {
@@ -163,6 +191,12 @@ PopupWindow {
                     width: parent.width
                     visible: root.currentTab === 2
                     active: root.open && root.currentTab === 2
+                }
+
+                PowerTab {
+                    width: parent.width
+                    visible: root.currentTab === 3
+                    onActionTriggered: root.open = false
                 }
             }
         }
