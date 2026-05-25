@@ -23,6 +23,8 @@ QtObject {
     readonly property color textDim: "#7a7a88"
 
     readonly property color accent: "#a8b5e8"
+    readonly property color danger: "#e8919b"
+    readonly property color dangerHover: Qt.rgba(0.91, 0.45, 0.50, 0.13)
     readonly property color volGradStart: "#8a99e8"
     readonly property color volGradEnd: "#c8a5e8"
     readonly property color volGradMuteStart: "#555"
