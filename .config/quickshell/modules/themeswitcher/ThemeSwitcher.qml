@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -101,7 +102,17 @@ PanelWindow {
         closing = true
         closeHold.restart()
     }
-    Timer { id: closeHold; interval: 260; onTriggered: root.closing = false }
+    Timer {
+        id: closeHold
+        interval: 260
+        onTriggered: {
+            root.closing = false
+            root.revealActive = false
+            root.applying = false
+            root.glyphSize = 0
+            root.fullFade = 0
+        }
+    }
 
     // Wrapping increment/decrement → infinite carousel.
     function moveSel(delta) {
@@ -110,13 +121,14 @@ PanelWindow {
         else view.decrementCurrentIndex()
     }
 
-    // A curated set of the flashy awww transitions; one is rolled at random on
-    // each apply so the swap feels different every time (plain fade/simple are
-    // intentionally left out). grow/outer/center radiate a circle from a point;
-    // wipe/wave sweep across at an angle.
-    readonly property var coolTransitions: ["grow", "outer", "center", "wipe", "wave"]
-    readonly property var growSpots: ["0.5,0.5", "0.0,0.0", "1.0,1.0", "0.0,1.0", "1.0,0.0"]
-    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)] }
+    // ---- apply: reveal the new wallpaper through a growing Arch logo ----
+    property string pendingWall: ""        // path passed to awww at the end
+    property string revealSource: ""       // file:// url shown in the reveal layer
+    property bool revealActive: false
+    property real glyphSize: 0             // animated 0 -> huge: the Arch logo growing
+    property real fullFade: 0              // final unmasked fade-in to fill the corners
+    // How big the glyph must grow so its solid area dominates the screen.
+    readonly property real glyphTarget: Math.max(width, height) * 2.4
 
     function applyTheme() {
         if (applying || themeModel.count === 0) return
@@ -125,25 +137,38 @@ PanelWindow {
         const t = themeModel.get(i)
         if (!t || !t.wallpaper) return
         applying = true
+        pendingWall = t.wallpaper
+        revealSource = root.fileUrl(t.wallpaper)
+        glyphSize = 0
+        fullFade = 0
+        revealActive = true
+        archReveal.restart()
+    }
 
-        const tr = pick(coolTransitions)
-        let cmd = ["awww", "img",
-            "--transition-type", tr,
-            "--transition-fps", "144",
-            "--transition-duration", "1.1",
-            "--transition-pos", pick(growSpots)]    // used by grow/outer/center
-        if (tr === "wipe" || tr === "wave")
-            cmd.push("--transition-angle", String(pick([0, 45, 90, 135])))
-        cmd.push(t.wallpaper)
+    // Grow the Arch logo, fade the corners in, set the real wallpaper instantly
+    // behind the now-complete reveal, then dismiss.
+    SequentialAnimation {
+        id: archReveal
+        NumberAnimation { target: root; property: "glyphSize"; from: 0; to: root.glyphTarget
+                          duration: 820; easing.type: Easing.InOutCubic }
+        NumberAnimation { target: root; property: "fullFade"; from: 0; to: 1
+                          duration: 260; easing.type: Easing.OutCubic }
+        ScriptAction { script: root.commitWallpaper() }
+        PauseAnimation { duration: 320 }       // let awww actually swap underneath
+        ScriptAction { script: root.closeMenu() }
+    }
 
-        applyProc.command = cmd
+    function commitWallpaper() {
+        // Instant set (no awww animation) — the overlay already shows the new
+        // wallpaper everywhere, so this hand-off is invisible.
+        applyProc.command = ["awww", "img", "--transition-type", "none", pendingWall]
         applyProc.running = true
     }
 
     Process {
         id: applyProc
         running: false
-        onExited: (code, status) => root.closeMenu()
+        // Closing is driven by archReveal, not by awww exiting.
     }
 
     IpcHandler {
@@ -284,7 +309,6 @@ PanelWindow {
                         asynchronous: true
                         cache: true
                         smooth: true
-                        mipmap: true
                         transform: Matrix4x4 {
                             // Opposite shear about the image centre → cancels
                             // the frame shear, so the picture stays upright.
@@ -306,6 +330,61 @@ PanelWindow {
                     }
                 }
             }
+        }
+    }
+
+    // ---- Arch-logo reveal layer (on top, only while applying) ----------
+    // The new wallpaper is drawn ONLY through the Arch glyph, which grows from
+    // nothing to fill the screen; a short unmasked fade then covers the corners
+    // the (triangular) logo can't reach. Sits above the filmstrip.
+    Item {
+        id: reveal
+        anchors.fill: parent
+        visible: root.revealActive
+
+        // Full-screen new wallpaper — hidden; used as the masked source.
+        Image {
+            id: revealWall
+            anchors.fill: parent
+            source: root.revealSource
+            fillMode: Image.PreserveAspectCrop
+            cache: true
+            visible: false
+        }
+
+        // The growing Arch glyph, rendered to a layer so it can be a mask.
+        Item {
+            id: archMask
+            anchors.fill: parent
+            visible: false
+            layer.enabled: true
+            Text {
+                anchors.centerIn: parent
+                text: String.fromCodePoint(0xF303)   // nf-linux-archlinux
+                font.family: Theme.icon              // Symbols Nerd Font
+                font.pixelSize: Math.max(1, root.glyphSize)
+                color: "white"
+                antialiasing: true
+            }
+        }
+
+        // Wallpaper masked by the glyph: visible only where the logo is.
+        MultiEffect {
+            anchors.fill: parent
+            source: revealWall
+            maskEnabled: true
+            maskSource: archMask
+            maskThresholdMin: 0.5
+            maskSpreadAtMin: 0.05
+        }
+
+        // Final unmasked fill so the screen corners complete the reveal.
+        Image {
+            anchors.fill: parent
+            source: root.revealSource
+            fillMode: Image.PreserveAspectCrop
+            cache: true
+            opacity: root.fullFade
         }
     }
 }
