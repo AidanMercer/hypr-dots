@@ -14,6 +14,18 @@ Item {
     readonly property var adapter: Bluetooth.defaultAdapter
     readonly property bool ready: adapter !== null
 
+    // The device rows, shared by the Repeater (below) and keyboard navigation so
+    // both index into the same ordering. Empty when the stack is off.
+    readonly property var deviceList: ready && adapter.enabled
+        ? sortDevices(Bluetooth.devices?.values ?? [])
+        : []
+
+    // Keyboard navigation, driven by ControlPopup's Up/Down/Enter. navIndex
+    // highlights a device row (-1 = none); activateNav (dis)connects/pairs it.
+    property int navIndex: -1
+    readonly property int navCount: deviceList.length
+    function activateNav() { tapDevice(deviceList[navIndex]) }
+
     // connected first, then paired, then the rest — alphabetical within groups
     function sortDevices(list) {
         function rank(d) { return d.connected ? 0 : (d.paired ? 1 : 2) }
@@ -170,19 +182,22 @@ Item {
         }
 
         Repeater {
-            model: root.ready && root.adapter.enabled
-                ? root.sortDevices(Bluetooth.devices?.values ?? [])
-                : []
+            model: root.deviceList
 
             delegate: Rectangle {
                 id: btRow
                 required property var modelData
+                required property int index
+                readonly property bool navSelected: root.navIndex === index
                 width: col.width
                 height: 38
                 radius: 11
                 color: modelData.connected
                     ? Theme.rowSelected
-                    : (btRowMa.containsMouse ? Theme.rowHover : "transparent")
+                    : ((navSelected || btRowMa.containsMouse) ? Theme.rowHover : "transparent")
+                // accent ring marks the keyboard-highlighted row.
+                border.width: navSelected ? 1 : 0
+                border.color: Theme.accent
                 Behavior on color { ColorAnimation { duration: 150 } }
 
                 Text {
