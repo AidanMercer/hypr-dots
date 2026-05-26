@@ -16,8 +16,54 @@ PanelWindow {
 
     property var barWindow
     property real anchorCenterX: 0
-    property bool open: false
+    // The popup opens only when ControlBus names this popup's monitor, so `open`
+    // is a read-only reflection of the shared bus rather than a local toggle.
+    readonly property string monitorName: barWindow && barWindow.screen ? barWindow.screen.name : ""
+    readonly property bool open: monitorName !== "" && ControlBus.openMonitor === monitorName
     property int currentTab: 0  // 0 = network, 1 = sound, 2 = bluetooth, 3 = power
+
+    // When the popup opens (via click or Super+M) focus the card so it receives
+    // key events; Left/Right (or Tab) switch tabs, Up/Down walk the rows inside
+    // the active tab, Enter acts on the highlighted row, Esc closes. See the
+    // nav* helpers below and card.Keys further down.
+    onOpenChanged: if (open) { resetNav(); Qt.callLater(card.forceActiveFocus) }
+
+    // The four tab content items, indexed to line up with `tabs`/`currentTab`.
+    // ControlPopup owns the Up/Down traversal (the wrap-around math lives here,
+    // once); each tab only exposes navCount + activateNav() and highlights its
+    // own row at navIndex.
+    //
+    // Populated in Component.onCompleted (not as a `[networkTab, …]` binding):
+    // those ids live in nested delegates that don't exist yet while root's
+    // property bindings first evaluate, so an eager binding throws "not defined".
+    property var tabItems: []
+    readonly property var activeTab: tabItems.length === tabs.length ? tabItems[currentTab] : null
+    Component.onCompleted: tabItems = [networkTab, soundTab, bluetoothTab, powerTab]
+
+    // Move the highlight within the active tab's list, wrapping at the ends. A
+    // fresh tab has navIndex -1 (nothing highlighted): the first Down lands on
+    // row 0, the first Up on the last row.
+    function navMove(delta) {
+        const t = activeTab
+        if (!t || t.navCount === 0) return
+        if (t.navIndex < 0) t.navIndex = delta > 0 ? 0 : t.navCount - 1
+        else t.navIndex = (t.navIndex + delta + t.navCount) % t.navCount
+    }
+
+    // Enter/Return acts on the highlighted row (connect wifi, switch audio
+    // device, (dis)connect a bluetooth device, run a power action).
+    function navActivate() {
+        const t = activeTab
+        if (t && t.navIndex >= 0 && t.navIndex < t.navCount) t.activateNav()
+    }
+
+    // Clear every tab's highlight, so navigation starts fresh on open and when
+    // switching tabs rather than resuming a stale (or now out-of-range) row.
+    function resetNav() {
+        for (let i = 0; i < tabItems.length; i++) tabItems[i].navIndex = -1
+    }
+
+    onCurrentTabChanged: resetNav()
 
     // network status passed through from the StatusButton into the Network tab
     property string connType: "none"
@@ -31,6 +77,9 @@ PanelWindow {
 
     WlrLayershell.namespace: "quickshell-control-popup"
     WlrLayershell.layer: WlrLayer.Overlay
+    // Grab the keyboard only while open so arrow/Tab/Esc reach the popup, and the
+    // focused window keeps the keyboard the rest of the time.
+    WlrLayershell.keyboardFocus: open ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     anchors { top: true; bottom: true; left: true; right: true }
     // Cover the full output (including the strip under the bar) so a click
@@ -53,7 +102,7 @@ PanelWindow {
     MouseArea {
         anchors.fill: parent
         enabled: root.open
-        onClicked: root.open = false
+        onClicked: ControlBus.close()
     }
 
     Item {
@@ -99,6 +148,29 @@ PanelWindow {
             color: Theme.glassBg
             border.color: Theme.glassBorder
             border.width: 1
+            focus: true
+
+            // Left/Right (and Tab/Shift+Tab) wrap across the tab strip; Up/Down
+            // walk the rows inside the active tab; Enter acts on the highlighted
+            // row; Esc dismisses. Focus is forced here on open via
+            // root.onOpenChanged.
+            Keys.onPressed: (e) => {
+                if (e.key === Qt.Key_Escape) {
+                    ControlBus.close(); e.accepted = true
+                } else if (e.key === Qt.Key_Right || e.key === Qt.Key_Tab) {
+                    root.currentTab = (root.currentTab + 1) % root.tabs.length
+                    e.accepted = true
+                } else if (e.key === Qt.Key_Left || e.key === Qt.Key_Backtab) {
+                    root.currentTab = (root.currentTab + root.tabs.length - 1) % root.tabs.length
+                    e.accepted = true
+                } else if (e.key === Qt.Key_Down) {
+                    root.navMove(1); e.accepted = true
+                } else if (e.key === Qt.Key_Up) {
+                    root.navMove(-1); e.accepted = true
+                } else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
+                    root.navActivate(); e.accepted = true
+                }
+            }
 
             // Swallow clicks on the card so they don't fall through to the scrim.
             MouseArea { anchors.fill: parent }
@@ -200,6 +272,7 @@ PanelWindow {
 
                 // ── tab contents (only the active one is visible/sized) ──
                 NetworkTab {
+                    id: networkTab
                     width: parent.width
                     visible: root.currentTab === 0
                     active: root.open && root.currentTab === 0
@@ -209,20 +282,23 @@ PanelWindow {
                 }
 
                 SoundTab {
+                    id: soundTab
                     width: parent.width
                     visible: root.currentTab === 1
                 }
 
                 BluetoothTab {
+                    id: bluetoothTab
                     width: parent.width
                     visible: root.currentTab === 2
                     active: root.open && root.currentTab === 2
                 }
 
                 PowerTab {
+                    id: powerTab
                     width: parent.width
                     visible: root.currentTab === 3
-                    onActionTriggered: root.open = false
+                    onActionTriggered: ControlBus.close()
                 }
             }
         }

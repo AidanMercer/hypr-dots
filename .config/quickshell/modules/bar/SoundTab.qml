@@ -14,6 +14,21 @@ Item {
     readonly property bool muted: sink?.audio?.muted ?? false
     readonly property int volPercent: Math.round(vol * 100)
 
+    // Output then input device lists, shared by the two Repeaters and keyboard
+    // navigation so the indices line up. The volume slider stays mouse-only.
+    readonly property var sinks: Pipewire.nodes.values.filter(n => n.audio && n.isSink && !n.isStream)
+    readonly property var sources: Pipewire.nodes.values.filter(n => n.audio && !n.isSink && !n.isStream)
+
+    // Keyboard navigation, driven by ControlPopup's Up/Down/Enter. navIndex runs
+    // across outputs (0 … sinks-1) then inputs (sinks … end); activateNav makes
+    // the highlighted device the default sink or source.
+    property int navIndex: -1
+    readonly property int navCount: sinks.length + sources.length
+    function activateNav() {
+        if (navIndex < sinks.length) Pipewire.preferredDefaultAudioSink = sinks[navIndex]
+        else Pipewire.preferredDefaultAudioSource = sources[navIndex - sinks.length]
+    }
+
     Column {
         id: col
         width: parent.width
@@ -138,6 +153,7 @@ Item {
             id: deviceRow
             property var node
             property bool isDefault: false
+            property bool navSelected: false
             signal activated
 
             width: col.width
@@ -145,7 +161,10 @@ Item {
             radius: 11
             color: isDefault
                 ? Theme.rowSelected
-                : (rowMa.containsMouse ? Theme.rowHover : "transparent")
+                : ((navSelected || rowMa.containsMouse) ? Theme.rowHover : "transparent")
+            // accent ring marks the keyboard-highlighted row.
+            border.width: navSelected ? 1 : 0
+            border.color: Theme.accent
             Behavior on color { ColorAnimation { duration: 150 } }
 
             Rectangle {
@@ -187,11 +206,13 @@ Item {
         SectionHeader { label: "OUTPUT" }
 
         Repeater {
-            model: Pipewire.nodes.values.filter(n => n.audio && n.isSink && !n.isStream)
+            model: root.sinks
             delegate: DeviceRow {
                 required property var modelData
+                required property int index
                 node: modelData
                 isDefault: modelData === Pipewire.defaultAudioSink
+                navSelected: root.navIndex === index
                 onActivated: Pipewire.preferredDefaultAudioSink = modelData
             }
         }
@@ -199,11 +220,13 @@ Item {
         SectionHeader { label: "INPUT" }
 
         Repeater {
-            model: Pipewire.nodes.values.filter(n => n.audio && !n.isSink && !n.isStream)
+            model: root.sources
             delegate: DeviceRow {
                 required property var modelData
+                required property int index
                 node: modelData
                 isDefault: modelData === Pipewire.defaultAudioSource
+                navSelected: root.navIndex === root.sinks.length + index
                 onActivated: Pipewire.preferredDefaultAudioSource = modelData
             }
         }

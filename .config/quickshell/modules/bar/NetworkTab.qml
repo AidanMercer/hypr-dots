@@ -24,6 +24,16 @@ Item {
 
     signal connectionChanged()
 
+    // Keyboard navigation, driven by ControlPopup's Up/Down/Enter. navIndex
+    // highlights a wifi row (-1 = none); activateNav connects to it. Keep the
+    // highlighted row scrolled into view as it moves through the fixed-height
+    // list. (navIndex is positional, so a background rescan that re-sorts the
+    // list can shift which network is highlighted — acceptable for a brief popup.)
+    property int navIndex: -1
+    readonly property int navCount: networks.length
+    function activateNav() { connectTo(networks[navIndex].ssid) }
+    onNavIndexChanged: if (navIndex >= 0) list.positionViewAtIndex(navIndex, ListView.Contain)
+
     onActiveChanged: if (active) wifiListProc.running = true
 
     function splitNm(line) {
@@ -169,12 +179,17 @@ Item {
                 delegate: Rectangle {
                     id: netRow
                     required property var modelData
+                    required property int index
+                    readonly property bool navSelected: root.navIndex === index
                     width: list.width
                     height: 34
                     radius: 11
                     color: modelData.inUse
                         ? Theme.rowSelected
-                        : (netRowMa.containsMouse ? Theme.rowHover : "transparent")
+                        : ((navSelected || netRowMa.containsMouse) ? Theme.rowHover : "transparent")
+                    // accent ring marks the keyboard-highlighted row.
+                    border.width: navSelected ? 1 : 0
+                    border.color: Theme.accent
                     Behavior on color { ColorAnimation { duration: 150 } }
 
                     Rectangle {
