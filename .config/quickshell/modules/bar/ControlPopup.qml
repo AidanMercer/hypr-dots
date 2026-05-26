@@ -65,6 +65,14 @@ PanelWindow {
 
     onCurrentTabChanged: resetNav()
 
+    // Bare modifier keys that should NOT trigger the "any key closes it"
+    // dismissal — otherwise tapping Shift/Ctrl/Alt/Super would shut the popup.
+    readonly property var modifierKeys: [
+        Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_AltGr,
+        Qt.Key_Meta, Qt.Key_Super_L, Qt.Key_Super_R,
+        Qt.Key_CapsLock, Qt.Key_NumLock, Qt.Key_ScrollLock
+    ]
+
     // network status passed through from the StatusButton into the Network tab
     property string connType: "none"
     property string connName: ""
@@ -169,6 +177,11 @@ PanelWindow {
                     root.navMove(-1); e.accepted = true
                 } else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
                     root.navActivate(); e.accepted = true
+                } else if (!root.modifierKeys.includes(e.key)) {
+                    // Any other key (a letter, digit, etc.) dismisses the popup —
+                    // a "just start typing to bail out" escape hatch. Bare
+                    // modifier taps are filtered above so they don't close it.
+                    ControlBus.close(); e.accepted = true
                 }
             }
 
