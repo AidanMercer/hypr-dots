@@ -31,6 +31,14 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
     }
 
+    // Top-right: live CPU / RAM / GPU usage, mirroring the date bubble's margin.
+    ResourceBubble {
+        id: resourceBubble
+        anchors.right: parent.right
+        anchors.rightMargin: 10
+        anchors.verticalCenter: parent.verticalCenter
+    }
+
     Workspaces {
         id: workspaces
         monitor: Hyprland.monitorFor(bar.screen)
