@@ -54,7 +54,11 @@ PanelWindow {
     // cards is identical on every monitor. (Previously the path ran the full
     // view.width, so slivers flew apart on the ultrawide and bunched on small
     // screens — spacing was view.width / pathItemCount.)
-    readonly property real pathSpan: 2200       // fixed carousel width → small, constant gap between frames
+    readonly property real pathSpan: 1300       // tight enough that every card overlaps its
+                                                 // neighbour. With no background showing through,
+                                                 // each card exposes an equal-width slice → even
+                                                 // rhythm, while the wide centre card (highest z)
+                                                 // sits on top and overlaps both its neighbours.
     // Image is oversized so the counter-shear never exposes an edge.
     readonly property real imgW: centreWidth + (centreHeight * Math.abs(skewFactor)) + 60
     readonly property real imgH: centreHeight
