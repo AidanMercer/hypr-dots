@@ -213,79 +213,113 @@ PanelWindow {
                 }
             }
 
-            // ── results: no background, floating over the clear desktop ──
-            // Row hover/selected tints sit below the blur's alpha threshold
-            // (see Theme.rowSelected/rowHover), so they stay clear too.
-            ListView {
-                id: list
-                width: parent.width
-                height: Math.min(root.results.length, 8) * 42
-                visible: root.results.length > 0
-                clip: true
-                model: root.results
-                currentIndex: root.selectedIndex
-                boundsBehavior: Flickable.StopAtBounds
-                onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+            // ── results: their own frosted panel, floating below the box ──
+            // glassBg (alpha 0.22) clears the blur threshold, so the whole panel
+            // frosts; the row hover/selected tints sit below it and just read as
+            // faint highlights on top of the frost.
+            Rectangle {
+                id: resultsPanel
+                width: searchBox.width
+                height: resultsCol.implicitHeight + 16
+                radius: Theme.popupRadius
+                color: Theme.glassBg
+                border.color: Theme.glassBorder
+                border.width: 1
 
-                delegate: Rectangle {
-                    id: appRow
-                    required property var modelData
-                    required property int index
-                    width: ListView.view.width
-                    height: 42
-                    radius: 11
-                    color: ListView.isCurrentItem
-                        ? Theme.rowSelected
-                        : (rowMa.containsMouse ? Theme.rowHover : "transparent")
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                // Swallow clicks on the panel background so they don't fall
+                // through to the scrim and close the launcher.
+                MouseArea { anchors.fill: parent }
 
-                    Rectangle {
-                        id: dot
-                        anchors.left: parent.left
-                        anchors.leftMargin: 14
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 8
-                        height: 8
-                        radius: 4
-                        color: appRow.ListView.isCurrentItem ? Theme.accent : "transparent"
-                        border.width: appRow.ListView.isCurrentItem ? 0 : 1
-                        border.color: Theme.dotBorder
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                // Thin highlight along the top edge, same as the search box.
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.leftMargin: parent.radius
+                    anchors.rightMargin: parent.radius
+                    anchors.topMargin: 1
+                    height: 1
+                    color: Theme.glassHighlight
+                }
+
+                Column {
+                    id: resultsCol
+                    x: 8
+                    y: 8
+                    width: parent.width - 16
+
+                    ListView {
+                        id: list
+                        width: parent.width
+                        height: Math.min(root.results.length, 8) * 42
+                        visible: root.results.length > 0
+                        clip: true
+                        model: root.results
+                        currentIndex: root.selectedIndex
+                        boundsBehavior: Flickable.StopAtBounds
+                        onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+
+                        delegate: Rectangle {
+                            id: appRow
+                            required property var modelData
+                            required property int index
+                            width: ListView.view.width
+                            height: 42
+                            radius: 11
+                            color: ListView.isCurrentItem
+                                ? Theme.rowSelected
+                                : (rowMa.containsMouse ? Theme.rowHover : "transparent")
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            Rectangle {
+                                id: dot
+                                anchors.left: parent.left
+                                anchors.leftMargin: 14
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 8
+                                height: 8
+                                radius: 4
+                                color: appRow.ListView.isCurrentItem ? Theme.accent : "transparent"
+                                border.width: appRow.ListView.isCurrentItem ? 0 : 1
+                                border.color: Theme.dotBorder
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                            }
+
+                            Text {
+                                anchors.left: dot.right
+                                anchors.leftMargin: 12
+                                anchors.right: parent.right
+                                anchors.rightMargin: 14
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: appRow.modelData.name
+                                color: appRow.ListView.isCurrentItem ? Theme.textBright : Theme.textTertiary
+                                font.pixelSize: 13
+                                elide: Text.ElideRight
+                            }
+
+                            MouseArea {
+                                id: rowMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onEntered: root.selectedIndex = appRow.index
+                                onClicked: root.launch(appRow.modelData)
+                            }
+                        }
                     }
 
                     Text {
-                        anchors.left: dot.right
-                        anchors.leftMargin: 12
-                        anchors.right: parent.right
-                        anchors.rightMargin: 14
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: appRow.modelData.name
-                        color: appRow.ListView.isCurrentItem ? Theme.textBright : Theme.textTertiary
+                        visible: root.results.length === 0
+                        width: parent.width
+                        text: root.query.length ? "No matches" : "No applications"
+                        color: Theme.textMuted
                         font.pixelSize: 13
-                        elide: Text.ElideRight
-                    }
-
-                    MouseArea {
-                        id: rowMa
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: root.selectedIndex = appRow.index
-                        onClicked: root.launch(appRow.modelData)
+                        font.italic: true
+                        horizontalAlignment: Text.AlignHCenter
+                        topPadding: 6
+                        bottomPadding: 6
                     }
                 }
-            }
-
-            Text {
-                visible: root.results.length === 0
-                width: parent.width
-                text: root.query.length ? "No matches" : "No applications"
-                color: Theme.textMuted
-                font.pixelSize: 13
-                font.italic: true
-                horizontalAlignment: Text.AlignHCenter
-                topPadding: 6
-                bottomPadding: 6
             }
         }
     }
