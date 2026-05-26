@@ -188,7 +188,10 @@ PanelWindow {
             visible: themeModel.count > 0
 
             model: themeModel
-            pathItemCount: 7
+            // Never exceed the theme count: if pathItemCount > model count,
+            // PathView reserves an empty slot for the "missing" item, leaving a
+            // gap in the carousel (looks like uneven spacing). Cap at 7.
+            pathItemCount: Math.min(themeModel.count, 7)
             preferredHighlightBegin: 0.5
             preferredHighlightEnd: 0.5
             highlightRangeMode: PathView.StrictlyEnforceRange
