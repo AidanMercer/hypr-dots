@@ -82,16 +82,13 @@ PanelWindow {
     }
 
     // ---- scrim (click-outside to dismiss) ------------------------------
-    Rectangle {
+    // Transparent (no dimming), like the control popup: the desktop shows
+    // through crisp and only the card is frosted, via the ignore_alpha
+    // layerrule for quickshell-launcher in hyprland.conf.
+    MouseArea {
         anchors.fill: parent
-        color: Qt.rgba(0, 0, 0, 0.28)
-        opacity: root.open ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: root.closeMenu()
-        }
+        enabled: root.open
+        onClicked: root.closeMenu()
     }
 
     // ---- the glass card ------------------------------------------------
