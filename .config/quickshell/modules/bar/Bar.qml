@@ -47,7 +47,7 @@ PanelWindow {
         anchors.left: workspaces.right
         anchors.leftMargin: 8
         anchors.verticalCenter: parent.verticalCenter
-        onPopupToggleRequested: controlPopup.open = !controlPopup.open
+        onPopupToggleRequested: ControlBus.toggle(bar.screen ? bar.screen.name : "")
     }
 
     ControlPopup {
