@@ -50,6 +50,11 @@ PanelWindow {
     readonly property real centreHeight: 390
     readonly property real sideHeight: 360
     readonly property real skewFactor: -0.32    // leans the frame like "/"
+    // Carousel spans a FIXED pixel width centred on screen, so the gap between
+    // cards is identical on every monitor. (Previously the path ran the full
+    // view.width, so slivers flew apart on the ultrawide and bunched on small
+    // screens — spacing was view.width / pathItemCount.)
+    readonly property real pathSpan: 1890       // ≈ 270px per card across 7 stops
     // Image is oversized so the counter-shear never exposes an edge.
     readonly property real imgW: centreWidth + (centreHeight * Math.abs(skewFactor)) + 60
     readonly property real imgH: centreHeight
@@ -194,7 +199,7 @@ PanelWindow {
             // Straight horizontal path; cards interpolate width/height/opacity
             // between the dim thin edges and the wide bright centre.
             path: Path {
-                startX: 0; startY: view.height / 2
+                startX: view.width / 2 - root.pathSpan / 2; startY: view.height / 2
                 PathAttribute { name: "iwide"; value: root.sideWidth }
                 PathAttribute { name: "ihigh"; value: root.sideHeight }
                 PathAttribute { name: "iopac"; value: 0.5 }
@@ -204,7 +209,7 @@ PanelWindow {
                 PathAttribute { name: "ihigh"; value: root.centreHeight }
                 PathAttribute { name: "iopac"; value: 1.0 }
                 PathAttribute { name: "iz";    value: 10 }
-                PathLine { x: view.width; y: view.height / 2 }
+                PathLine { x: view.width / 2 + root.pathSpan / 2; y: view.height / 2 }
                 PathAttribute { name: "iwide"; value: root.sideWidth }
                 PathAttribute { name: "ihigh"; value: root.sideHeight }
                 PathAttribute { name: "iopac"; value: 0.5 }
