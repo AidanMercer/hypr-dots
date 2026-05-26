@@ -2,22 +2,19 @@ import QtQuick
 import Quickshell.Io
 import "../common"
 
-// Top-right bar bubble: live CPU / RAM / GPU usage as little icon + percent
-// groups, in the same frosted glass as the other bubbles.
+// Top-right bar bubble: live CPU / RAM usage as little icon + percent groups,
+// in the same frosted glass as the other bubbles. Each group turns amber over
+// 60% and red over 85% (see the Stat component) so load is obvious at a glance.
 //
-//   • CPU  — % busy over the last poll, from the delta of two /proc/stat samples
-//   • RAM  — used / total, from /proc/meminfo (MemTotal vs MemAvailable)
-//   • GPU  — nvidia-smi utilisation on the desktop; falls back to AMD's sysfs
-//            busy file, else shows "—" (e.g. the Intel laptop, where no simple
-//            per-cent metric is exposed). Stays portable across both machines.
+//   • CPU — % busy over the last poll, from the delta of two /proc/stat samples
+//   • RAM — used / total, from /proc/meminfo (MemTotal vs MemAvailable)
 Bubble {
     id: root
     width: statRow.width + 24
 
-    // Each metric: 0–100, or -1 when not yet sampled / unavailable (renders "—").
+    // Each metric: 0–100, or -1 when not yet sampled (renders "—").
     property int cpuPercent: -1
     property int ramPercent: -1
-    property int gpuPercent: -1
 
     // CPU% needs two samples, so we keep the previous /proc/stat totals and diff.
     property real prevTotal: 0
@@ -36,7 +33,6 @@ Bubble {
         onTriggered: {
             cpuProc.running = true
             ramProc.running = true
-            gpuProc.running = true
         }
     }
 
@@ -79,31 +75,16 @@ Bubble {
         if (total > 0) root.ramPercent = Math.round(100 * (total - avail) / total)
     }
 
-    // ── GPU: nvidia-smi → AMD sysfs → nothing (shows "—") ──
-    Process {
-        id: gpuProc
-        // tr -dc keeps only digits: nvidia-smi prints its "driver not loaded"
-        // error to *stdout* (not stderr), so we must filter to a number rather
-        // than trust non-empty output — otherwise the error text would count as
-        // a reading and the AMD fallback would never run.
-        command: ["sh", "-c",
-            "v=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -dc '0-9'); " +
-            "if [ -n \"$v\" ]; then echo \"$v\"; " +
-            "else for f in /sys/class/drm/card*/device/gpu_busy_percent; do [ -r \"$f\" ] && cat \"$f\" && break; done; fi"]
-        running: false
-        stdout: StdioCollector { onStreamFinished: root.parseGpu(text) }
-    }
-    function parseGpu(raw) {
-        const n = parseInt(raw.trim())
-        root.gpuPercent = isNaN(n) ? -1 : n
-    }
-
     // ── one icon + percentage pair; fixed-width number so the bar never jiggles
     //    as values change (1% → 100%) ──
     component Stat: Row {
         id: stat
         property string glyph: ""
         property int value: -1
+        // amber once a metric passes 60%, red past 85% — below that each element
+        // keeps its resting colour (dim icon, bright number).
+        readonly property bool warn: value >= 60 && value < 85
+        readonly property bool crit: value >= 85
         spacing: 5
 
         Text {
@@ -111,7 +92,8 @@ Bubble {
             text: stat.glyph
             font.family: Theme.icon
             font.pixelSize: 14
-            color: Theme.textSecondary
+            color: stat.crit ? Theme.danger : stat.warn ? Theme.warning : Theme.textSecondary
+            Behavior on color { ColorAnimation { duration: 200 } }
         }
 
         Text {
@@ -119,10 +101,11 @@ Bubble {
             width: 32
             horizontalAlignment: Text.AlignRight
             text: root.pct(stat.value)
-            color: Theme.textPrimary
+            color: stat.crit ? Theme.danger : stat.warn ? Theme.warning : Theme.textPrimary
             font.pixelSize: 13
             font.family: Theme.mono
             font.weight: Font.Medium
+            Behavior on color { ColorAnimation { duration: 200 } }
         }
     }
 
@@ -133,6 +116,5 @@ Bubble {
 
         Stat { glyph: String.fromCodePoint(0xF0EE0); value: root.cpuPercent } // nf-md-cpu_64_bit
         Stat { glyph: String.fromCodePoint(0xF035B); value: root.ramPercent } // nf-md-memory
-        Stat { glyph: String.fromCodePoint(0xF0FD8); value: root.gpuPercent } // nf-md-expansion_card_variant
     }
 }
