@@ -287,9 +287,12 @@ PanelWindow {
                             id: appRow
                             required property var modelData
                             required property int index
-                            // The synthetic last row (see root.results) has no
-                            // app name; it's the web-search action instead.
-                            readonly property bool isWeb: modelData.webSearch === true
+                            // The synthetic last row (see root.results) is the
+                            // web-search action. Detect it by position — reading
+                            // a custom prop off the mixed app/web model via
+                            // modelData is unreliable, so use the index instead.
+                            readonly property bool isWeb: root.query.length > 0
+                                && index === root.results.length - 1
                             width: ListView.view.width
                             height: 42
                             radius: 11
@@ -336,7 +339,7 @@ PanelWindow {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: appRow.isWeb
                                     ? "Search the web for “" + root.query + "”"
-                                    : appRow.modelData.name
+                                    : (appRow.modelData && appRow.modelData.name) || ""
                                 color: appRow.ListView.isCurrentItem ? Theme.textBright : Theme.textTertiary
                                 font.pixelSize: 13
                                 elide: Text.ElideRight
@@ -348,7 +351,9 @@ PanelWindow {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onEntered: root.selectedIndex = appRow.index
-                                onClicked: root.activate(appRow.modelData)
+                                // Pass the real array element (not modelData) so
+                                // activate() reads webSearch reliably.
+                                onClicked: root.activate(root.results[appRow.index])
                             }
                         }
                     }
