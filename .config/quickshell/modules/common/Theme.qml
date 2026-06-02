@@ -17,10 +17,10 @@ QtObject {
 
     readonly property color textPrimary: "#e6e6f0"
     readonly property color textBright: "#ffffff"
-    readonly property color textSecondary: "#a8a8b8"
-    readonly property color textTertiary: "#c0c0c8"
-    readonly property color textMuted: "#6a6a78"
-    readonly property color textDim: "#7a7a88"
+    readonly property color textSecondary: "#c4c4d0"
+    readonly property color textTertiary: "#d4d4dc"
+    readonly property color textMuted: "#a0a4b0"
+    readonly property color textDim: "#a8acb6"
 
     readonly property color accent: "#a8b5e8"
     readonly property color danger: "#e8919b"
