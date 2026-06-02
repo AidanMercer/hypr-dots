@@ -2,7 +2,7 @@ pragma Singleton
 import QtQuick
 
 QtObject {
-    readonly property color glassBg: Qt.rgba(0.10, 0.10, 0.14, 0.22)
+    readonly property color glassBg: Qt.rgba(0.08, 0.08, 0.10, 0.45)
     readonly property color glassBorder: Qt.rgba(1, 1, 1, 0.18)
     readonly property color glassHighlight: Qt.rgba(1, 1, 1, 0.10)
 
