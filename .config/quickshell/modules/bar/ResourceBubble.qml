@@ -16,6 +16,17 @@ Bubble {
     property int cpuPercent: -1
     property int ramPercent: -1
 
+    // Extras shown in the hover tooltip — not on the bubble face itself.
+    property real load1: 0
+    property real load5: 0
+    property real load15: 0
+    property int cpuCores: 0
+    property real ramUsedGb: 0
+    property real ramTotalGb: 0
+
+    // Hover state, consumed by the ResourceTooltip in Bar.qml.
+    property alias hovered: hover.hovered
+
     // CPU% needs two samples, so we keep the previous /proc/stat totals and diff.
     property real prevTotal: 0
     property real prevIdle: 0
@@ -24,7 +35,20 @@ Bubble {
 
     function pct(v) { return v < 0 ? "—" : v + "%" }
 
-    // ── one tick drives all three reads ──
+    HoverHandler { id: hover }
+
+    // Core count is static — read once at startup via nproc.
+    Component.onCompleted: coreProc.running = true
+    Process {
+        id: coreProc
+        command: ["nproc"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: root.cpuCores = parseInt(text.trim()) || 0
+        }
+    }
+
+    // ── one tick drives all reads ──
     Timer {
         interval: root.pollInterval
         running: true
@@ -33,6 +57,7 @@ Bubble {
         onTriggered: {
             cpuProc.running = true
             ramProc.running = true
+            loadProc.running = true
         }
     }
 
@@ -72,7 +97,28 @@ Bubble {
             if (line.startsWith("MemTotal:")) total = parseInt(line.replace(/\D+/g, ""))
             else if (line.startsWith("MemAvailable:")) avail = parseInt(line.replace(/\D+/g, ""))
         }
-        if (total > 0) root.ramPercent = Math.round(100 * (total - avail) / total)
+        if (total > 0) {
+            root.ramPercent = Math.round(100 * (total - avail) / total)
+            // /proc/meminfo values are in KiB → MiB → GiB
+            root.ramTotalGb = total / 1024 / 1024
+            root.ramUsedGb = (total - avail) / 1024 / 1024
+        }
+    }
+
+    // ── load average: 1 / 5 / 15 minute, from /proc/loadavg ──
+    Process {
+        id: loadProc
+        command: ["cat", "/proc/loadavg"]
+        running: false
+        stdout: StdioCollector { onStreamFinished: root.parseLoad(text) }
+    }
+    function parseLoad(raw) {
+        const p = raw.trim().split(/\s+/)
+        if (p.length >= 3) {
+            root.load1 = parseFloat(p[0])
+            root.load5 = parseFloat(p[1])
+            root.load15 = parseFloat(p[2])
+        }
     }
 
     // ── one icon + percentage pair; fixed-width number so the bar never jiggles
