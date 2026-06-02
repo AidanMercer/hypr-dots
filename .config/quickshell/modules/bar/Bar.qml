@@ -67,4 +67,20 @@ PanelWindow {
         uptimeText: statusButton.uptimeText
         onConnectionChanged: statusButton.refresh()
     }
+
+    // Hover the ResourceBubble to see the breakdown behind the percentages
+    // (load averages, core count, RAM in GB). Lives in its own layer-shell
+    // overlay so it can spill below the bar.
+    ResourceTooltip {
+        barWindow: bar
+        open: resourceBubble.hovered
+        cpuPercent: resourceBubble.cpuPercent
+        ramPercent: resourceBubble.ramPercent
+        load1: resourceBubble.load1
+        load5: resourceBubble.load5
+        load15: resourceBubble.load15
+        cpuCores: resourceBubble.cpuCores
+        ramUsedGb: resourceBubble.ramUsedGb
+        ramTotalGb: resourceBubble.ramTotalGb
+    }
 }
