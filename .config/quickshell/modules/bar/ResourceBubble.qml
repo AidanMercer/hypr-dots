@@ -24,8 +24,10 @@ Bubble {
     property real ramUsedGb: 0
     property real ramTotalGb: 0
 
-    // Hover state, consumed by the ResourceTooltip in Bar.qml.
-    property alias hovered: hover.hovered
+    // Hover state, consumed by the ResourceTooltip in Bar.qml. Uses a
+    // MouseArea (not HoverHandler) — matches the StatusButton pattern and
+    // reliably receives events on the bar's layer-shell surface.
+    property alias hovered: hoverArea.containsMouse
 
     // CPU% needs two samples, so we keep the previous /proc/stat totals and diff.
     property real prevTotal: 0
@@ -35,7 +37,13 @@ Bubble {
 
     function pct(v) { return v < 0 ? "—" : v + "%" }
 
-    HoverHandler { id: hover }
+    // acceptedButtons: NoButton — we only want hover, not to swallow clicks.
+    MouseArea {
+        id: hoverArea
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+    }
 
     // Core count is static — read once at startup via nproc.
     Component.onCompleted: coreProc.running = true
