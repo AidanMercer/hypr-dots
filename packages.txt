@@ -3,8 +3,12 @@
 #   sudo pacman -S --needed $(grep -v '^#' packages.txt | sed -n '/^\[repo\]/,/^\[aur\]/p' | grep -v '^\[')
 #   paru -S --needed       $(grep -v '^#' packages.txt | sed -n '/^\[aur\]/,$p'        | grep -v '^\[')
 # (or just read it by eye — it's a plain list.)
+#
+# hardware/boot packages (nvidia, grub, ucode, mesa, linux) are left out on
+# purpose — those come with the install, not the rice.
 
 [repo]
+# compositor + core desktop
 hyprland
 kitty
 fuzzel
@@ -15,9 +19,30 @@ hypridle
 hyprshot
 cliphist
 brightnessctl
+
+# audio
 pipewire
 pipewire-pulse
 wireplumber
+
+# network + bluetooth
+networkmanager
+network-manager-applet
+bluez
+bluez-utils
+
+# portals, polkit, qt/wayland glue
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-gtk
+polkit-kde-agent
+qt5-wayland
+qt6-wayland
+qt6ct
+
+# files, fonts, terminal extras
+dolphin
+ttf-nerd-fonts-symbols
+fastfetch
 
 [aur]
 paru
