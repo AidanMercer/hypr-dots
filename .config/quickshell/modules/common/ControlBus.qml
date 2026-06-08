@@ -17,9 +17,15 @@ QtObject {
     // Name of the monitor whose popup is currently open, or "" when none is.
     property string openMonitor: ""
 
+    // Name of the physical monitor to flash an "identify" badge on (set while a
+    // box is dragged in the Display tab), or "" for none. The per-screen
+    // DisplayIdentify overlays watch this.
+    property string identifyMonitor: ""
+
     // Toggle the popup on a specific monitor (used by the StatusButton click).
     function toggle(name) {
         openMonitor = (openMonitor === name) ? "" : name
+        if (openMonitor === "") identifyMonitor = ""
     }
 
     // Toggle on whichever monitor has focus (used by the Super+M IPC handler).
@@ -30,5 +36,9 @@ QtObject {
 
     function close() {
         openMonitor = ""
+        identifyMonitor = ""
     }
+
+    function identify(name) { identifyMonitor = name }
+    function clearIdentify() { identifyMonitor = "" }
 }

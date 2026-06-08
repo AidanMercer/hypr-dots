@@ -11,6 +11,13 @@ ShellRoot {
         Bar {}
     }
 
+    // Per-screen "identify" badge: a big white card naming the physical display
+    // while you drag its box in the Display tab. One overlay per monitor.
+    Variants {
+        model: Quickshell.screens
+        DisplayIdentify {}
+    }
+
     // Single app launcher window; toggled over IPC from the Super keybind.
     Launcher {}
 
