@@ -144,6 +144,17 @@ Item {
         dirty = false
     }
 
+    // After a monitor reconfig the layer-shell surfaces on each output (the
+    // quickshell bars, the awww wallpaper) sit there blank until something forces
+    // a frame — that's why you had to open a window on each screen. Kick them:
+    // reload the renderer so hyprland recommits every layer, then have awww
+    // repaint each output's wallpaper at its new geometry.
+    function nudgeSurfaces() {
+        nudgeProc.command = ["sh", "-c",
+            "hyprctl dispatch forcerendererreload; sleep 0.3; awww restore"]
+        nudgeProc.running = true
+    }
+
     function saveToConfig() {
         applyLive()
         const body = getLayout().map(m => "monitor=" + monitorRule(m)).join("\n")
@@ -165,8 +176,10 @@ Item {
     Process {
         id: applyProc
         running: false
-        onRunningChanged: if (!running) readProc.running = true   // re-sync to actual
+        onRunningChanged: if (!running) { root.nudgeSurfaces(); readProc.running = true }   // re-sync to actual
     }
+
+    Process { id: nudgeProc; running: false }
 
     Process { id: saveProc; running: false }
 
