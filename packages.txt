@@ -21,11 +21,15 @@ cliphist
 brightnessctl
 
 # audio
+#   systemctl --user enable --now wireplumber.service
+#   (the pipewire/pipewire-pulse sockets enable themselves on install)
 pipewire
 pipewire-pulse
 wireplumber
 
 # network + bluetooth
+#   sudo systemctl enable --now NetworkManager.service
+#   sudo systemctl enable --now bluetooth.service
 networkmanager
 network-manager-applet
 bluez
