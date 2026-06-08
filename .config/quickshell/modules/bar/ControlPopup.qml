@@ -20,7 +20,7 @@ PanelWindow {
     // is a read-only reflection of the shared bus rather than a local toggle.
     readonly property string monitorName: barWindow && barWindow.screen ? barWindow.screen.name : ""
     readonly property bool open: monitorName !== "" && ControlBus.openMonitor === monitorName
-    property int currentTab: 0  // 0 = network, 1 = sound, 2 = bluetooth, 3 = power
+    property int currentTab: 0  // 0 = network, 1 = sound, 2 = bluetooth, 3 = power, 4 = display
 
     // When the popup opens (via click or Super+M) focus the card so it receives
     // key events; Left/Right (or Tab) switch tabs, Up/Down walk the rows inside
@@ -28,23 +28,24 @@ PanelWindow {
     // nav* helpers below and card.Keys further down.
     onOpenChanged: if (open) { resetNav(); Qt.callLater(card.forceActiveFocus) }
 
-    // The four tab content items, indexed to line up with `tabs`/`currentTab`.
+    // The tab content items, in display order to line up with `tabs`/`currentTab`.
     // ControlPopup owns the Up/Down traversal (the wrap-around math lives here,
     // once); each tab only exposes navCount + activateNav() and highlights its
     // own row at navIndex.
     //
-    // Populated in Component.onCompleted (not as a `[networkTab, …]` binding):
-    // those ids live in nested delegates that don't exist yet while root's
-    // property bindings first evaluate, so an eager binding throws "not defined".
-    property var tabItems: []
-    readonly property var activeTab: tabItems.length === tabs.length ? tabItems[currentTab] : null
-    Component.onCompleted: tabItems = [networkTab, soundTab, bluetoothTab, powerTab]
+    // Resolved on demand by tabList() instead of cached at Component.onCompleted:
+    // the heavier DisplayTab (it starts a Process + Repeater on creation) can have
+    // its id register *after* root's onCompleted runs, so a load-time snapshot
+    // races ("displayTab is not defined") and leaves nav broken. Functions resolve
+    // the ids at call time — always well after load — so they never race.
+    function tabList() { return [networkTab, soundTab, bluetoothTab, powerTab, displayTab] }
+    function activeTabItem() { return tabList()[currentTab] }
 
     // Move the highlight within the active tab's list, wrapping at the ends. A
     // fresh tab has navIndex -1 (nothing highlighted): the first Down lands on
     // row 0, the first Up on the last row.
     function navMove(delta) {
-        const t = activeTab
+        const t = activeTabItem()
         if (!t || t.navCount === 0) return
         if (t.navIndex < 0) t.navIndex = delta > 0 ? 0 : t.navCount - 1
         else t.navIndex = (t.navIndex + delta + t.navCount) % t.navCount
@@ -53,14 +54,15 @@ PanelWindow {
     // Enter/Return acts on the highlighted row (connect wifi, switch audio
     // device, (dis)connect a bluetooth device, run a power action).
     function navActivate() {
-        const t = activeTab
+        const t = activeTabItem()
         if (t && t.navIndex >= 0 && t.navIndex < t.navCount) t.activateNav()
     }
 
     // Clear every tab's highlight, so navigation starts fresh on open and when
     // switching tabs rather than resuming a stale (or now out-of-range) row.
     function resetNav() {
-        for (let i = 0; i < tabItems.length; i++) tabItems[i].navIndex = -1
+        const ts = tabList()
+        for (let i = 0; i < ts.length; i++) ts[i].navIndex = -1
     }
 
     onCurrentTabChanged: resetNav()
@@ -103,7 +105,8 @@ PanelWindow {
         { label: "Network",   glyph: 0xF05A9 },
         { label: "Sound",     glyph: 0xF057E },
         { label: "Bluetooth", glyph: 0xF00AF },
-        { label: "Power",     glyph: 0xF0425 }
+        { label: "Power",     glyph: 0xF0425 },
+        { label: "Display",   glyph: 0xF0379 }
     ]
 
     // ── scrim: transparent (no dimming), click-outside to dismiss ──
@@ -150,7 +153,7 @@ PanelWindow {
 
         Rectangle {
             id: card
-            width: 360
+            width: 432
             height: content.implicitHeight + 32
             radius: Theme.popupRadius
             color: Theme.glassBg
@@ -312,6 +315,13 @@ PanelWindow {
                     width: parent.width
                     visible: root.currentTab === 3
                     onActionTriggered: ControlBus.close()
+                }
+
+                DisplayTab {
+                    id: displayTab
+                    width: parent.width
+                    visible: root.currentTab === 4
+                    active: root.open && root.currentTab === 4
                 }
             }
         }
