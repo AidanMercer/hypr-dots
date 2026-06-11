@@ -40,20 +40,20 @@ PanelWindow {
             text: Qt.formatDateTime(clock.date, "ddd d MMM")
             color: Theme.textSecondary
             font.family: root.clockFont
-            font.pixelSize: 26
+            font.pixelSize: 32
             font.weight: Font.Medium
             font.letterSpacing: 3
-            bottomPadding: 8
+            bottomPadding: 10
         }
 
         Text {
             text: Qt.formatDateTime(clock.date, "HH")
             color: Theme.textBright
             font.family: root.clockFont
-            font.pixelSize: 180
-            font.weight: Font.Thin
-            font.letterSpacing: -2
-            lineHeight: 0.92
+            font.pixelSize: 200
+            font.weight: Font.Normal
+            font.letterSpacing: -3
+            lineHeight: 0.78
             lineHeightMode: Text.ProportionalHeight
         }
 
@@ -61,9 +61,9 @@ PanelWindow {
             text: Qt.formatDateTime(clock.date, "mm")
             color: Theme.textBright
             font.family: root.clockFont
-            font.pixelSize: 180
-            font.weight: Font.Thin
-            font.letterSpacing: -2
+            font.pixelSize: 200
+            font.weight: Font.Normal
+            font.letterSpacing: -3
             lineHeight: 0.92
             lineHeightMode: Text.ProportionalHeight
         }
