@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Io
 import "modules/common"
 import "modules/bar"
+import "modules/audiobars"
 import "modules/launcher"
 import "modules/themeswitcher"
 import "modules/shortcuts"
@@ -10,6 +11,12 @@ ShellRoot {
     Variants {
         model: Quickshell.screens
         Bar {}
+    }
+
+    // cava-style audio spectrum down the right edge, one per screen.
+    Variants {
+        model: Quickshell.screens
+        AudioBars {}
     }
 
     // Per-screen "identify" badge: a big white card naming the physical display
