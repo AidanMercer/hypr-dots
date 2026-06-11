@@ -13,9 +13,17 @@ ShellRoot {
         Bar {}
     }
 
-    // cava-style audio spectrum down the right edge, one per screen.
+    // cava-style audio spectrum down the right edge — only on the right-most
+    // monitor (greatest x), so it lives on the true outer edge of the desktop.
     Variants {
-        model: Quickshell.screens
+        model: {
+            const screens = Quickshell.screens
+            if (!screens.length) return []
+            let best = screens[0]
+            for (const s of screens)
+                if (s.x > best.x) best = s
+            return [best]
+        }
         AudioBars {}
     }
 
