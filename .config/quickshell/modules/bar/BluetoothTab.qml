@@ -25,6 +25,11 @@ Item {
     property int navIndex: -1
     readonly property int navCount: deviceList.length
     function activateNav() { tapDevice(deviceList[navIndex]) }
+    onNavIndexChanged: if (navIndex >= 0) devList.positionViewAtIndex(navIndex, ListView.Contain)
+
+    // height of the scrollable device area (≈ 5 rows); keep this constant so the
+    // popup never grows when a scan turns up a pile of nearby devices.
+    readonly property int listHeight: 200
 
     // connected first, then paired, then the rest — alphabetical within groups
     function sortDevices(list) {
@@ -160,89 +165,103 @@ Item {
             }
         }
 
-        Text {
-            visible: root.ready && root.adapter.enabled
-                && (Bluetooth.devices?.values ?? []).length === 0
+        // ── fixed-height scrollable device list ──
+        Item {
+            visible: root.ready
             width: parent.width
-            text: "Searching…"
-            color: Theme.textMuted
-            font.pixelSize: 12
-            font.italic: true
-            horizontalAlignment: Text.AlignHCenter
-        }
+            height: root.listHeight
 
-        Text {
-            visible: root.ready && !root.adapter.enabled
-            width: parent.width
-            text: "Turn Bluetooth on to scan for devices."
-            color: Theme.textMuted
-            font.pixelSize: 12
-            font.italic: true
-            horizontalAlignment: Text.AlignHCenter
-        }
+            ListView {
+                id: devList
+                anchors.fill: parent
+                clip: true
+                spacing: 2
+                model: root.deviceList
+                boundsBehavior: Flickable.StopAtBounds
 
-        Repeater {
-            model: root.deviceList
-
-            delegate: Rectangle {
-                id: btRow
-                required property var modelData
-                required property int index
-                readonly property bool navSelected: root.navIndex === index
-                width: col.width
-                height: 38
-                radius: 11
-                color: modelData.connected
-                    ? Theme.rowSelected
-                    : ((navSelected || btRowMa.containsMouse) ? Theme.rowHover : "transparent")
-                // accent ring marks the keyboard-highlighted row.
-                border.width: navSelected ? 1 : 0
-                border.color: Theme.accent
-                Behavior on color { ColorAnimation { duration: 150 } }
-
-                Text {
-                    id: btIcon
-                    anchors.left: parent.left
-                    anchors.leftMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: String.fromCodePoint(btRow.modelData.connected ? 0xF00B1 : 0xF00AF)
-                    font.family: Theme.icon
-                    font.pixelSize: 15
-                    color: btRow.modelData.connected ? Theme.accent : Theme.textTertiary
-                }
-
-                Column {
-                    anchors.left: btIcon.right
-                    anchors.leftMargin: 10
-                    anchors.right: parent.right
-                    anchors.rightMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 1
+                delegate: Rectangle {
+                    id: btRow
+                    required property var modelData
+                    required property int index
+                    readonly property bool navSelected: root.navIndex === index
+                    width: devList.width
+                    height: 38
+                    radius: 11
+                    color: modelData.connected
+                        ? Theme.rowSelected
+                        : ((navSelected || btRowMa.containsMouse) ? Theme.rowHover : "transparent")
+                    // accent ring marks the keyboard-highlighted row.
+                    border.width: navSelected ? 1 : 0
+                    border.color: Theme.accent
+                    Behavior on color { ColorAnimation { duration: 150 } }
 
                     Text {
-                        width: parent.width
-                        text: btRow.modelData.deviceName || btRow.modelData.name || btRow.modelData.address
-                        color: btRow.modelData.connected ? Theme.textBright : Theme.textTertiary
-                        font.pixelSize: 12
-                        elide: Text.ElideRight
+                        id: btIcon
+                        anchors.left: parent.left
+                        anchors.leftMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: String.fromCodePoint(btRow.modelData.connected ? 0xF00B1 : 0xF00AF)
+                        font.family: Theme.icon
+                        font.pixelSize: 15
+                        color: btRow.modelData.connected ? Theme.accent : Theme.textTertiary
                     }
 
-                    Text {
-                        width: parent.width
-                        text: root.statusText(btRow.modelData)
-                        color: Theme.textMuted
-                        font.pixelSize: 10
-                        elide: Text.ElideRight
+                    Column {
+                        anchors.left: btIcon.right
+                        anchors.leftMargin: 10
+                        anchors.right: parent.right
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 1
+
+                        Text {
+                            width: parent.width
+                            text: btRow.modelData.deviceName || btRow.modelData.name || btRow.modelData.address
+                            color: btRow.modelData.connected ? Theme.textBright : Theme.textTertiary
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: root.statusText(btRow.modelData)
+                            color: Theme.textMuted
+                            font.pixelSize: 10
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    MouseArea {
+                        id: btRowMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.tapDevice(btRow.modelData)
                     }
                 }
+            }
 
-                MouseArea {
-                    id: btRowMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.tapDevice(btRow.modelData)
-                }
+            // slim scroll indicator, only when the list overflows
+            Rectangle {
+                visible: devList.contentHeight > devList.height
+                anchors.right: parent.right
+                width: 3
+                radius: 1.5
+                color: Theme.subtleDivider
+                y: devList.visibleArea.yPosition * devList.height
+                height: Math.max(24, devList.visibleArea.heightRatio * devList.height)
+            }
+
+            // empty state, centered in the list area
+            Text {
+                visible: root.deviceList.length === 0
+                anchors.centerIn: parent
+                width: parent.width
+                text: !root.adapter.enabled ? "Turn Bluetooth on to scan for devices." : "Searching…"
+                color: Theme.textMuted
+                font.pixelSize: 12
+                font.italic: true
+                horizontalAlignment: Text.AlignHCenter
             }
         }
     }
