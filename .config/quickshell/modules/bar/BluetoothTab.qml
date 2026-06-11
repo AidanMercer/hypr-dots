@@ -14,31 +14,59 @@ Item {
     readonly property var adapter: Bluetooth.defaultAdapter
     readonly property bool ready: adapter !== null
 
-    // The device rows, shared by the Repeater (below) and keyboard navigation so
-    // both index into the same ordering. Empty when the stack is off.
+    // A device's connected/paired flags don't bump Bluetooth.devices, so the
+    // grouped list below won't re-sort on its own when something connects or
+    // drops. Tick this (on tap + on a slow timer) to force a re-group so a
+    // device hops into the right section. navIndex/positional nav can shift
+    // when this re-sorts — fine for a brief popup.
+    property int rev: 0
+    Timer {
+        interval: 2000
+        running: root.active && root.ready && root.adapter.enabled
+        repeat: true
+        onTriggered: root.rev++
+    }
+
+    // Each entry wraps a device with its section group, so the ListView can
+    // draw section headers. Shared by the list and keyboard nav so both index
+    // into the same ordering. Empty when the stack is off. (rev is read only to
+    // make this binding re-run on connect/disconnect — see above.)
     readonly property var deviceList: ready && adapter.enabled
-        ? sortDevices(Bluetooth.devices?.values ?? [])
+        ? buildList(Bluetooth.devices?.values ?? [], rev)
         : []
 
     // Keyboard navigation, driven by ControlPopup's Up/Down/Enter. navIndex
     // highlights a device row (-1 = none); activateNav (dis)connects/pairs it.
     property int navIndex: -1
     readonly property int navCount: deviceList.length
-    function activateNav() { tapDevice(deviceList[navIndex]) }
+    function activateNav() { tapDevice(deviceList[navIndex].dev) }
     onNavIndexChanged: if (navIndex >= 0) devList.positionViewAtIndex(navIndex, ListView.Contain)
 
     // height of the scrollable device area (≈ 5 rows); keep this constant so the
     // popup never grows when a scan turns up a pile of nearby devices.
     readonly property int listHeight: 200
 
-    // connected first, then paired, then the rest — alphabetical within groups
-    function sortDevices(list) {
-        function rank(d) { return d.connected ? 0 : (d.paired ? 1 : 2) }
-        return [...list].sort((a, b) => {
-            const r = rank(a) - rank(b)
-            if (r !== 0) return r
-            return (a.deviceName || a.name || "").localeCompare(b.deviceName || b.name || "")
-        })
+    function deviceGroup(d) {
+        if (d.connected) return "connected"
+        if (d.paired) return "paired"
+        return "available"
+    }
+
+    // connected first, then paired (remembered), then unpaired — alphabetical
+    // within each group. The "group" key drives the ListView's section headers.
+    function buildList(list) {
+        function rank(g) { return g === "connected" ? 0 : (g === "paired" ? 1 : 2) }
+        return [...list]
+            .map(d => ({ dev: d, group: deviceGroup(d) }))
+            .sort((a, b) => {
+                const r = rank(a.group) - rank(b.group)
+                if (r !== 0) return r
+                return (a.dev.deviceName || a.dev.name || "").localeCompare(b.dev.deviceName || b.dev.name || "")
+            })
+    }
+
+    function sectionLabel(g) {
+        return g === "connected" ? "CONNECTED" : (g === "paired" ? "PAIRED" : "AVAILABLE")
     }
 
     function statusText(d) {
@@ -54,6 +82,7 @@ Item {
         if (d.connected) d.disconnect()
         else if (d.paired) d.connect()
         else d.pair()
+        rev++
     }
 
     // Scan only while the tab is open and the adapter is on.
@@ -138,34 +167,7 @@ Item {
             topPadding: 6
         }
 
-        // ── DEVICES section ──
-        Item {
-            visible: root.ready
-            width: parent.width
-            height: 14
-
-            Text {
-                id: devHdr
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: "DEVICES"
-                color: Theme.textDim
-                font.pixelSize: 9
-                font.weight: Font.Bold
-                font.letterSpacing: 2
-            }
-
-            Rectangle {
-                anchors.left: devHdr.right
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: 10
-                height: 1
-                color: Theme.divider
-            }
-        }
-
-        // ── fixed-height scrollable device list ──
+        // ── fixed-height scrollable device list, grouped into sections ──
         Item {
             visible: root.ready
             width: parent.width
@@ -179,15 +181,45 @@ Item {
                 model: root.deviceList
                 boundsBehavior: Flickable.StopAtBounds
 
+                section.property: "group"
+                section.criteria: ViewSection.FullString
+                section.delegate: Item {
+                    required property string section
+                    width: devList.width
+                    height: 20
+
+                    Text {
+                        id: secHdr
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: 4
+                        text: root.sectionLabel(parent.section)
+                        color: Theme.textDim
+                        font.pixelSize: 9
+                        font.weight: Font.Bold
+                        font.letterSpacing: 2
+                    }
+
+                    Rectangle {
+                        anchors.left: secHdr.right
+                        anchors.right: parent.right
+                        anchors.verticalCenter: secHdr.verticalCenter
+                        anchors.leftMargin: 10
+                        height: 1
+                        color: Theme.divider
+                    }
+                }
+
                 delegate: Rectangle {
                     id: btRow
                     required property var modelData
                     required property int index
+                    readonly property var dev: modelData.dev
                     readonly property bool navSelected: root.navIndex === index
                     width: devList.width
                     height: 38
                     radius: 11
-                    color: modelData.connected
+                    color: dev.connected
                         ? Theme.rowSelected
                         : ((navSelected || btRowMa.containsMouse) ? Theme.rowHover : "transparent")
                     // accent ring marks the keyboard-highlighted row.
@@ -200,10 +232,10 @@ Item {
                         anchors.left: parent.left
                         anchors.leftMargin: 12
                         anchors.verticalCenter: parent.verticalCenter
-                        text: String.fromCodePoint(btRow.modelData.connected ? 0xF00B1 : 0xF00AF)
+                        text: String.fromCodePoint(btRow.dev.connected ? 0xF00B1 : 0xF00AF)
                         font.family: Theme.icon
                         font.pixelSize: 15
-                        color: btRow.modelData.connected ? Theme.accent : Theme.textTertiary
+                        color: btRow.dev.connected ? Theme.accent : Theme.textTertiary
                     }
 
                     Column {
@@ -216,15 +248,15 @@ Item {
 
                         Text {
                             width: parent.width
-                            text: btRow.modelData.deviceName || btRow.modelData.name || btRow.modelData.address
-                            color: btRow.modelData.connected ? Theme.textBright : Theme.textTertiary
+                            text: btRow.dev.deviceName || btRow.dev.name || btRow.dev.address
+                            color: btRow.dev.connected ? Theme.textBright : Theme.textTertiary
                             font.pixelSize: 12
                             elide: Text.ElideRight
                         }
 
                         Text {
                             width: parent.width
-                            text: root.statusText(btRow.modelData)
+                            text: root.statusText(btRow.dev)
                             color: Theme.textMuted
                             font.pixelSize: 10
                             elide: Text.ElideRight
@@ -236,7 +268,7 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.tapDevice(btRow.modelData)
+                        onClicked: root.tapDevice(btRow.dev)
                     }
                 }
             }
