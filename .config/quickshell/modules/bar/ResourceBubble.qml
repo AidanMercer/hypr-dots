@@ -2,18 +2,20 @@ import QtQuick
 import Quickshell.Io
 import "../common"
 
-// Top-right bar bubble: live CPU / RAM (and battery, on the laptop) as little
-// icon + percent groups, in the same frosted glass as the other bubbles. CPU and
-// RAM turn amber over 60% and red over 85%; battery does the inverse — amber under
-// 30%, red under 15% — so load and a dying battery are both obvious at a glance.
+// Top-right: live CPU / RAM (and battery, on the laptop) as little icon + percent
+// groups. No glass pill — these float bare on the bar like the workspaces in the
+// centre, neutral white dimmed right down. CPU and RAM turn amber over 60% and red
+// over 85%; battery does the inverse — amber under 30%, red under 15% — so load and
+// a dying battery still stand out at a glance.
 //
 //   • CPU — % busy over the last poll, from the delta of two /proc/stat samples
 //   • RAM — used / total, from /proc/meminfo (MemTotal vs MemAvailable)
 //   • BAT — capacity + charging state from /sys/class/power_supply/BAT*; the whole
 //           group hides itself on machines with no battery (the desktop)
-Bubble {
+Item {
     id: root
-    width: statRow.width + 24
+    height: Theme.bubbleHeight
+    width: statRow.width + 12
 
     // Each metric: 0–100, or -1 when not yet sampled (renders "—").
     property int cpuPercent: -1
@@ -181,35 +183,41 @@ Bubble {
             && (lowIsBad ? value <= critAt : value >= critAt)
         readonly property bool warn: value >= 0 && !charging && !crit
             && (lowIsBad ? value <= warnAt : value >= warnAt)
-        spacing: 5
+        // any non-normal state (warn/crit/charging) drops the dimming so the
+        // colour actually reads; normal state stays faint and neutral.
+        readonly property bool lit: crit || warn || charging
+        spacing: 4
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: stat.glyph
             font.family: Theme.icon
-            font.pixelSize: 14
+            font.pixelSize: 13
             color: stat.crit ? Theme.danger : stat.warn ? Theme.warning
-                 : stat.charging ? Theme.accent : Theme.textSecondary
+                 : stat.charging ? Theme.accent : Theme.textBright
+            opacity: stat.lit ? 1.0 : 0.4
             Behavior on color { ColorAnimation { duration: 200 } }
+            Behavior on opacity { NumberAnimation { duration: 200 } }
         }
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            width: 32
+            width: 28
             horizontalAlignment: Text.AlignRight
             text: root.pct(stat.value)
-            color: stat.crit ? Theme.danger : stat.warn ? Theme.warning : Theme.textPrimary
-            font.pixelSize: 13
+            color: stat.crit ? Theme.danger : stat.warn ? Theme.warning : Theme.textBright
+            opacity: (stat.crit || stat.warn) ? 1.0 : 0.7
+            font.pixelSize: 12
             font.family: Theme.mono
-            font.weight: Font.Medium
             Behavior on color { ColorAnimation { duration: 200 } }
+            Behavior on opacity { NumberAnimation { duration: 200 } }
         }
     }
 
     Row {
         id: statRow
         anchors.centerIn: parent
-        spacing: 12
+        spacing: 10
 
         Stat { glyph: String.fromCodePoint(0xF0EE0); value: root.cpuPercent } // nf-md-cpu_64_bit
         Stat { glyph: String.fromCodePoint(0xF035B); value: root.ramPercent } // nf-md-memory
