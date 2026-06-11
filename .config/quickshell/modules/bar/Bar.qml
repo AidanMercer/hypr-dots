@@ -24,14 +24,7 @@ PanelWindow {
         objects: [Pipewire.defaultAudioSink, Pipewire.defaultAudioSource]
     }
 
-    DateBubble {
-        id: dateBubble
-        anchors.left: parent.left
-        anchors.leftMargin: 10
-        anchors.verticalCenter: parent.verticalCenter
-    }
-
-    // Top-right: live CPU / RAM / GPU usage, mirroring the date bubble's margin.
+    // Top-right: live CPU / RAM / GPU usage.
     ResourceBubble {
         id: resourceBubble
         anchors.right: parent.right
