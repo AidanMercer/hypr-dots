@@ -2,7 +2,6 @@ import Quickshell
 import Quickshell.Io
 import "modules/common"
 import "modules/bar"
-import "modules/desktop"
 import "modules/launcher"
 import "modules/themeswitcher"
 import "modules/shortcuts"
@@ -11,12 +10,6 @@ ShellRoot {
     Variants {
         model: Quickshell.screens
         Bar {}
-    }
-
-    // Desktop clock on each monitor, sitting on the wallpaper.
-    Variants {
-        model: Quickshell.screens
-        Clock {}
     }
 
     // Per-screen "identify" badge: a big white card naming the physical display
