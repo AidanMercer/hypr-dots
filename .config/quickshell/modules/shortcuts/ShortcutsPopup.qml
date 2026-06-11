@@ -76,23 +76,13 @@ PanelWindow {
         ],
         [
             { title: "Windows", binds: [
+                { keys: ["Super", "← → ↑ ↓"],        desc: "Focus window" },
                 { keys: ["Super", "Q"],              desc: "Close window" },
                 { keys: ["Super", "F"],              desc: "Toggle float" },
                 { keys: ["Super", "Drag"],           desc: "Move window" },
                 { keys: ["Super", "Right-drag"],     desc: "Resize window" },
                 { keys: ["Super", "Shift", "← →"],   desc: "Send to monitor" },
                 { keys: ["Super", "Shift", "↑ ↓"],   desc: "Move in layout" }
-            ]},
-            { title: "Canvas", binds: [
-                { keys: ["Super", "← → ↑ ↓"],        desc: "Focus nearest window" },
-                { keys: ["Super", "Home"],           desc: "Recenter" },
-                { keys: ["Super", "S"],              desc: "Spread" },
-                { keys: ["Super", "Tab"],            desc: "Overview" },
-                { keys: ["Super", "H"],              desc: "Toggle canvas" },
-                { keys: ["Super", "Shift", "M"],     desc: "Minimap" },
-                { keys: ["Super", "Ctrl", "↑ / ↓"], desc: "Zoom out / in" },
-                { keys: ["Super", "Shift", "1 – 5"], desc: "Resize window" },
-                { keys: ["Super", "Shift", "H"],     desc: "Canvas settings" }
             ]}
         ]
     ]
