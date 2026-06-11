@@ -53,7 +53,7 @@ PanelWindow {
             font.pixelSize: 150
             font.weight: Font.Normal
             font.letterSpacing: -2
-            lineHeight: 0.72
+            lineHeight: 0.66
             lineHeightMode: Text.ProportionalHeight
         }
 
