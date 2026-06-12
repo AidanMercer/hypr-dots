@@ -28,6 +28,7 @@ PanelWindow {
     visible: clockPath !== ""
 
     property string clockPath: ""
+    property int retriesLeft: 10
 
     // Encode each segment so theme names with spaces ("your name") survive.
     function fileUrl(p) {
@@ -59,8 +60,23 @@ PanelWindow {
 
     Component.onCompleted: queryProc.running = true
 
+    // awww may not have painted this output yet (login, monitor hotplug), so an
+    // empty answer isn't final — ask again a few times before giving up.
+    Timer {
+        interval: 2000
+        repeat: true
+        running: root.clockPath === "" && root.retriesLeft > 0
+        onTriggered: {
+            root.retriesLeft--
+            queryProc.running = true
+        }
+    }
+
     Connections {
         target: ControlBus
-        function onWallpaperChanged() { queryProc.running = true }
+        function onWallpaperChanged() {
+            root.retriesLeft = 10
+            queryProc.running = true
+        }
     }
 }
