@@ -82,9 +82,10 @@ PanelWindow {
                     anchors.verticalCenter: parent.verticalCenter
                     height: Math.max(2, parent.height - 3)
                     radius: height / 2
-                    // grows left from the edge; never fully vanishes so the strip
-                    // keeps a faint baseline at silence
-                    width: Math.max(2, level * root.maxLen)
+                    // grows left from the edge; collapses to nothing at silence so
+                    // there's no leftover baseline strip when nothing's playing
+                    width: level < 0.01 ? 0 : level * root.maxLen
+                    visible: width > 0
                     Behavior on width { NumberAnimation { duration: 45; easing.type: Easing.OutQuad } }
 
                     readonly property real level: root.levels[index] || 0
