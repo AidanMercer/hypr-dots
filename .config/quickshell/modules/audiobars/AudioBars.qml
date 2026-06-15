@@ -44,6 +44,15 @@ PanelWindow {
         stdout: SplitParser {
             onRead: line => root.parseFrame(line)
         }
+        // cava bails if pipewire isn't ready yet (login race) or the audio
+        // device changes (moving between machines). keep it alive.
+        onRunningChanged: if (!running) cavaRestart.start()
+    }
+
+    Timer {
+        id: cavaRestart
+        interval: 2000
+        onTriggered: cava.running = true
     }
 
     // blend two colors; t=0 → a, t=1 → b, with an explicit alpha
