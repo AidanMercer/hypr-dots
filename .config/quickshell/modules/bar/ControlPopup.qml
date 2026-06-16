@@ -1,102 +1,132 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Io
 import "../common"
 
-// Fullscreen, transparent layer-shell overlay holding the status card (Network
-// / Sound / Bluetooth / Power, with an uptime header). The card is positioned
-// just under the bar, centred on the StatusButton; clicking anywhere on the
-// surrounding scrim dismisses it.
+// Fullscreen, transparent layer-shell overlay holding the status card (Network /
+// Sound / Bluetooth / Power / Display, with an uptime header). Created once per
+// monitor in shell.qml — decoupled from the bar — so it works no matter which
+// bar (default or a theme's own) is loaded. Opens when ControlBus names this
+// monitor; clicking the surrounding scrim dismisses it.
 //
-// We use a scrim rather than HyprlandFocusGrab because the grab races the
-// popup's mapping and often fails to attach (so click-outside never closes it).
-// The Launcher uses this same proven scrim pattern.
+// It owns its own uptime + network polling (so it doesn't depend on the bar's
+// StatusButton) and switches to cyberpunk chrome when the active theme sets
+// `cyber = true` in its config.toml — the reused tabs keep their own styling.
+//
+// We use a scrim rather than HyprlandFocusGrab because the grab races the popup's
+// mapping and often fails to attach. The Launcher uses this same scrim pattern.
 PanelWindow {
     id: root
+    required property var modelData
+    screen: modelData
 
-    property var barWindow
-    property real anchorCenterX: 0
-    // The popup opens only when ControlBus names this popup's monitor, so `open`
-    // is a read-only reflection of the shared bus rather than a local toggle.
-    readonly property string monitorName: barWindow && barWindow.screen ? barWindow.screen.name : ""
+    readonly property string monitorName: modelData ? modelData.name : ""
     readonly property bool open: monitorName !== "" && ControlBus.openMonitor === monitorName
     property int currentTab: 0  // 0 = network, 1 = sound, 2 = bluetooth, 3 = power, 4 = display
 
-    // When the popup opens (via click or Super+M) focus the card so it receives
-    // key events; Left/Right (or Tab) switch tabs, Up/Down walk the rows inside
-    // the active tab, Enter acts on the highlighted row, Esc closes. See the
-    // nav* helpers below and card.Keys further down.
+    // ── theme chrome: cyberpunk when the theme opts in, glass otherwise ──
+    readonly property bool cyber: ThemeConfig.cyber
+    readonly property color accentCol: ThemeConfig.accent
+    readonly property color cardBg: cyber ? Qt.rgba(0.03, 0.03, 0.045, 0.93) : Theme.glassBg
+    readonly property color cardBorder: cyber ? accentCol : Theme.glassBorder
+    readonly property int cardRadius: cyber ? 5 : Theme.popupRadius
+
     onOpenChanged: if (open) { resetNav(); Qt.callLater(card.forceActiveFocus) }
 
-    // The tab content items, in display order to line up with `tabs`/`currentTab`.
-    // ControlPopup owns the Up/Down traversal (the wrap-around math lives here,
-    // once); each tab only exposes navCount + activateNav() and highlights its
-    // own row at navIndex.
-    //
-    // Resolved on demand by tabList() instead of cached at Component.onCompleted:
-    // the heavier DisplayTab (it starts a Process + Repeater on creation) can have
-    // its id register *after* root's onCompleted runs, so a load-time snapshot
-    // races ("displayTab is not defined") and leaves nav broken. Functions resolve
-    // the ids at call time — always well after load — so they never race.
     function tabList() { return [networkTab, soundTab, bluetoothTab, powerTab, displayTab] }
     function activeTabItem() { return tabList()[currentTab] }
 
-    // Move the highlight within the active tab's list, wrapping at the ends. A
-    // fresh tab has navIndex -1 (nothing highlighted): the first Down lands on
-    // row 0, the first Up on the last row.
     function navMove(delta) {
         const t = activeTabItem()
         if (!t || t.navCount === 0) return
         if (t.navIndex < 0) t.navIndex = delta > 0 ? 0 : t.navCount - 1
         else t.navIndex = (t.navIndex + delta + t.navCount) % t.navCount
     }
-
-    // Enter/Return acts on the highlighted row (connect wifi, switch audio
-    // device, (dis)connect a bluetooth device, run a power action).
     function navActivate() {
         const t = activeTabItem()
         if (t && t.navIndex >= 0 && t.navIndex < t.navCount) t.activateNav()
     }
-
-    // Clear every tab's highlight, so navigation starts fresh on open and when
-    // switching tabs rather than resuming a stale (or now out-of-range) row.
     function resetNav() {
         const ts = tabList()
         for (let i = 0; i < ts.length; i++) ts[i].navIndex = -1
     }
-
     onCurrentTabChanged: resetNav()
 
-    // Bare modifier keys that should NOT trigger the "any key closes it"
-    // dismissal — otherwise tapping Shift/Ctrl/Alt/Super would shut the popup.
     readonly property var modifierKeys: [
         Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_AltGr,
         Qt.Key_Meta, Qt.Key_Super_L, Qt.Key_Super_R,
         Qt.Key_CapsLock, Qt.Key_NumLock, Qt.Key_ScrollLock
     ]
 
-    // network status passed through from the StatusButton into the Network tab
-    property string connType: "none"
-    property string connName: ""
-    // uptime string passed through from the StatusButton into the header
-    property string uptimeText: ""
-    signal connectionChanged()
+    // ── uptime: read /proc/uptime, tick locally, re-sync to correct drift ──
+    property real uptimeSeconds: 0
+    readonly property string uptimeText: "up " + formatUptime(uptimeSeconds)
+    function formatUptime(s) {
+        const total = Math.floor(s)
+        const d = Math.floor(total / 86400)
+        const h = Math.floor((total % 86400) / 3600)
+        const m = Math.floor((total % 3600) / 60)
+        if (d > 0) return d + "d " + h + "h"
+        if (h > 0) return h + "h " + m + "m"
+        return m + "m"
+    }
+    Process {
+        id: uptimeProc
+        command: ["cat", "/proc/uptime"]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const first = parseFloat(text.trim().split(/\s+/)[0])
+                if (!isNaN(first)) root.uptimeSeconds = first
+            }
+        }
+    }
+    Timer { interval: 1000; running: true; repeat: true; onTriggered: root.uptimeSeconds += 1 }
+    Timer { interval: 300000; running: true; repeat: true; onTriggered: uptimeProc.running = true }
 
-    // Appear on the same monitor as the bar that owns this popup.
-    screen: barWindow ? barWindow.screen : null
+    // ── network: lightweight status poll feeding the Network tab ──
+    property string connType: "none"   // "wifi" | "ethernet" | "none"
+    property string connName: ""
+    signal connectionChanged()
+    function refreshNet() { netProc.running = true }
+    function parseNm(raw) {
+        let nextType = "none", nextName = ""
+        for (const line of raw.trim().split("\n")) {
+            if (!line) continue
+            const parts = line.split(":")
+            const type = parts[0], state = parts[1], name = parts.slice(2).join(":")
+            if (type === "loopback") continue
+            if (state !== "connected") continue
+            if (type === "wifi") { nextType = "wifi"; nextName = name; break }
+            if (type === "ethernet" && nextType === "none") { nextType = "ethernet"; nextName = name }
+        }
+        connType = nextType
+        connName = nextName
+    }
+    Process {
+        id: netProc
+        command: ["nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device", "status"]
+        running: false
+        stdout: StdioCollector { onStreamFinished: root.parseNm(text) }
+    }
+    // poll faster while open, lazily while closed
+    Timer {
+        interval: root.open ? 5000 : 30000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: netProc.running = true
+    }
+    onConnectionChanged: refreshNet()
 
     WlrLayershell.namespace: "quickshell-control-popup"
     WlrLayershell.layer: WlrLayer.Overlay
-    // Grab the keyboard only while open so arrow/Tab/Esc reach the popup, and the
-    // focused window keeps the keyboard the rest of the time.
     WlrLayershell.keyboardFocus: open ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     anchors { top: true; bottom: true; left: true; right: true }
-    // Cover the full output (including the strip under the bar) so a click
-    // anywhere outside the card is caught.
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
-    // Stay mapped through the close animation, like the launcher.
     visible: open || exitTrans.running
 
     readonly property string iconArch: String.fromCodePoint(0xF303) // nf-linux-archlinux
@@ -120,8 +150,8 @@ PanelWindow {
         id: morph
         width: card.width
         height: card.height
-        // Centre the card under the button, clamped to stay on-screen.
-        x: Math.max(8, Math.min(root.width - width - 8, root.anchorCenterX - width / 2))
+        // top-centre, just under the bar
+        x: Math.max(8, (root.width - width) / 2)
         y: Theme.barHeight + 4
         opacity: 0
         scale: 0.78
@@ -155,16 +185,12 @@ PanelWindow {
             id: card
             width: 432
             height: content.implicitHeight + 32
-            radius: Theme.popupRadius
-            color: Theme.glassBg
-            border.color: Theme.glassBorder
-            border.width: 1
+            radius: root.cardRadius
+            color: root.cardBg
+            border.color: root.cardBorder
+            border.width: root.cyber ? 1.4 : 1
             focus: true
 
-            // Left/Right (and Tab/Shift+Tab) wrap across the tab strip; Up/Down
-            // walk the rows inside the active tab; Enter acts on the highlighted
-            // row; Esc dismisses. Focus is forced here on open via
-            // root.onOpenChanged.
             Keys.onPressed: (e) => {
                 if (e.key === Qt.Key_Escape) {
                     ControlBus.close(); e.accepted = true
@@ -181,16 +207,13 @@ PanelWindow {
                 } else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
                     root.navActivate(); e.accepted = true
                 } else if (!root.modifierKeys.includes(e.key)) {
-                    // Any other key (a letter, digit, etc.) dismisses the popup —
-                    // a "just start typing to bail out" escape hatch. Bare
-                    // modifier taps are filtered above so they don't close it.
                     ControlBus.close(); e.accepted = true
                 }
             }
 
-            // Swallow clicks on the card so they don't fall through to the scrim.
             MouseArea { anchors.fill: parent }
 
+            // top highlight (glass) / neon accent rule (cyber)
             Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -198,8 +221,9 @@ PanelWindow {
                 anchors.leftMargin: parent.radius
                 anchors.rightMargin: parent.radius
                 anchors.topMargin: 1
-                height: 1
-                color: Theme.glassHighlight
+                height: root.cyber ? 2 : 1
+                color: root.cyber ? root.accentCol : Theme.glassHighlight
+                opacity: root.cyber ? 0.8 : 1
             }
 
             Column {
@@ -216,7 +240,7 @@ PanelWindow {
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.iconArch
-                        color: Theme.accent
+                        color: root.cyber ? root.accentCol : Theme.accent
                         font.family: Theme.icon
                         font.pixelSize: 16
                     }
@@ -248,9 +272,12 @@ PanelWindow {
 
                             width: (tabBar.width - tabBar.spacing * (root.tabs.length - 1)) / root.tabs.length
                             height: tabBar.height
-                            radius: 10
-                            color: selected ? Theme.rowSelected
+                            radius: root.cyber ? 4 : 10
+                            color: selected
+                                ? (root.cyber ? Qt.rgba(root.accentCol.r, root.accentCol.g, root.accentCol.b, 0.16) : Theme.rowSelected)
                                 : (tabMa.containsMouse ? Theme.rowHover : "transparent")
+                            border.width: (root.cyber && selected) ? 1 : 0
+                            border.color: root.accentCol
                             Behavior on color { ColorAnimation { duration: 150 } }
 
                             Row {
@@ -262,7 +289,7 @@ PanelWindow {
                                     text: String.fromCodePoint(tab.modelData.glyph)
                                     font.family: Theme.icon
                                     font.pixelSize: 14
-                                    color: tab.selected ? Theme.accent : Theme.textSecondary
+                                    color: tab.selected ? (root.cyber ? root.accentCol : Theme.accent) : Theme.textSecondary
                                     Behavior on color { ColorAnimation { duration: 150 } }
                                 }
 

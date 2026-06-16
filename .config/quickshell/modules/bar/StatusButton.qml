@@ -1,15 +1,10 @@
 import QtQuick
-import Quickshell.Io
 import "../common"
 
 // The single status button: a bare Arch glyph that sits just right of the
-// workspaces. Clicking it opens the ControlPopup (network / sound / bluetooth /
-// power). It shows only the Arch glyph, but it is the persistent owner of two
-// bits of state the popup displays:
-//   • the uptime readout (shown in the popup header), and
-//   • the polled network status (shown in the popup's Network tab).
-// Keeping these here means they stay live whether or not the popup is open,
-// exactly like the old always-on bubbles did.
+// workspaces. Clicking it toggles the ControlPopup (network / sound / bluetooth /
+// power / display) via ControlBus. The popup lives in shell.qml now and owns its
+// own uptime/network state, so this is just the trigger + glyph.
 Item {
     id: root
     width: Theme.bubbleHeight
@@ -20,50 +15,8 @@ Item {
 
     readonly property string iconArch: String.fromCodePoint(0xF303) // nf-linux-archlinux
 
-    // ── uptime state: read from /proc/uptime, advanced locally each second ──
-    property real seconds: 0
-    readonly property string uptimeText: "up " + formatUptime(seconds)
-
-    function formatUptime(s) {
-        const total = Math.floor(s)
-        const d = Math.floor(total / 86400)
-        const h = Math.floor((total % 86400) / 3600)
-        const m = Math.floor((total % 3600) / 60)
-        if (d > 0) return d + "d " + h + "h"
-        if (h > 0) return h + "h " + m + "m"
-        return m + "m"
-    }
-
-    // ── network state: polled; consumed by the popup's Network tab ──
-    property string connType: "none"   // "wifi" | "ethernet" | "none"
-    property string connName: ""
-
-    function refresh() { netProc.running = true }
-
-    function parseNm(raw) {
-        let nextType = "none"
-        let nextName = ""
-        for (const line of raw.trim().split("\n")) {
-            if (!line) continue
-            const parts = line.split(":")
-            const type = parts[0]
-            const state = parts[1]
-            const name = parts.slice(2).join(":")
-            if (type === "loopback") continue
-            if (state !== "connected") continue
-            if (type === "wifi") {
-                nextType = "wifi"
-                nextName = name
-                break
-            }
-            if (type === "ethernet" && nextType === "none") {
-                nextType = "ethernet"
-                nextName = name
-            }
-        }
-        connType = nextType
-        connName = nextName
-    }
+    // kept so the old call site (BarContent) doesn't break; nothing to refresh now.
+    function refresh() {}
 
     // Brighten the glyph while the popup is open or the button is hovered.
     Text {
@@ -82,40 +35,5 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.popupToggleRequested()
-    }
-
-    // ── uptime: read once, tick every second, re-sync periodically to correct
-    //    drift (e.g. after the machine suspends) ──
-    Process {
-        id: uptimeProc
-        command: ["cat", "/proc/uptime"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const first = parseFloat(text.trim().split(/\s+/)[0])
-                if (!isNaN(first)) root.seconds = first
-            }
-        }
-    }
-
-    Timer { interval: 1000; running: true; repeat: true; onTriggered: root.seconds += 1 }
-    Timer { interval: 300000; running: true; repeat: true; onTriggered: uptimeProc.running = true }
-
-    // ── network: lightweight status poll feeding the Network tab ──
-    Process {
-        id: netProc
-        command: ["nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device", "status"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: root.parseNm(text)
-        }
-    }
-
-    Timer {
-        interval: 5000
-        running: true
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: netProc.running = true
     }
 }
