@@ -8,11 +8,11 @@ import Quickshell.Io
 // wires ControlBus.wallpaperChanged -> reload).
 //
 // Recognised keys (flat TOML):
-//   bubbles = true | false   # glass pills behind the bar clusters (default: true)
+//   bubbles = true | false   # glass pills behind the bar clusters (default: false)
 QtObject {
     id: root
 
-    property bool bubbles: true
+    property bool bubbles: false
     property int retriesLeft: 10
 
     function reload() { retriesLeft = 10; queryProc.running = true }
@@ -23,7 +23,7 @@ QtObject {
     function parse(text) {
         if (text.indexOf("__OK__") === -1) return
         retriesLeft = 0
-        let b = true
+        let b = false
         for (const line of text.split("\n")) {
             const m = line.match(/^\s*bubbles\s*=\s*(true|false)\b/i)
             if (m) b = m[1].toLowerCase() === "true"
