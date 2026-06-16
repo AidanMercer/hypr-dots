@@ -10,10 +10,12 @@ import Quickshell.Io
 // Recognised keys (flat TOML):
 //   bubbles = true | false   # glass pills behind the bar clusters (default: false)
 //   accent  = "#rrggbb"      # glow color of the center cava visualizer
+//   cyber   = true | false   # cyberpunk chrome on the control popup (default: false)
 QtObject {
     id: root
 
     property bool bubbles: false
+    property bool cyber: false
     // default matches Theme.accent; hardcoded here to avoid a singleton import cycle.
     property color accent: "#a8b5e8"
     property int retriesLeft: 10
@@ -27,14 +29,18 @@ QtObject {
         if (text.indexOf("__OK__") === -1) return
         retriesLeft = 0
         let b = false
+        let cy = false
         let a = "#a8b5e8"
         for (const line of text.split("\n")) {
             const m = line.match(/^\s*bubbles\s*=\s*(true|false)\b/i)
             if (m) b = m[1].toLowerCase() === "true"
+            const cm = line.match(/^\s*cyber\s*=\s*(true|false)\b/i)
+            if (cm) cy = cm[1].toLowerCase() === "true"
             const c = line.match(/^\s*accent\s*=\s*["']?(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)["']?/)
             if (c) a = c[1]
         }
         root.bubbles = b
+        root.cyber = cy
         root.accent = a
     }
 

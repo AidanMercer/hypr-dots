@@ -52,26 +52,15 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
     }
 
-    // Single status button just right of the workspaces. Opens the ControlPopup
-    // (network / sound / bluetooth / power) and owns the uptime + network status
-    // the popup displays.
+    // Single status button just right of the workspaces. Toggles the ControlPopup
+    // (which now lives in shell.qml, decoupled from the bar) via ControlBus.
     StatusButton {
         id: statusButton
-        active: controlPopup.open
+        active: ControlBus.openMonitor === (root.barWindow.screen ? root.barWindow.screen.name : "")
         anchors.left: workspaces.right
         anchors.leftMargin: 8
         anchors.verticalCenter: parent.verticalCenter
         onPopupToggleRequested: ControlBus.toggle(root.barWindow.screen ? root.barWindow.screen.name : "")
-    }
-
-    ControlPopup {
-        id: controlPopup
-        barWindow: root.barWindow
-        anchorCenterX: statusButton.x + statusButton.width / 2
-        connType: statusButton.connType
-        connName: statusButton.connName
-        uptimeText: statusButton.uptimeText
-        onConnectionChanged: statusButton.refresh()
     }
 
     // Hover the ResourceBubble to see the breakdown behind the percentages

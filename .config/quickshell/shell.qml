@@ -16,6 +16,15 @@ ShellRoot {
         Bar {}
     }
 
+    // Control popup (network / sound / bluetooth / power / display), one per
+    // monitor. Decoupled from the bar so it works under any bar — default or a
+    // theme's own — and toggled through the ControlBus singleton (Super+M / the
+    // bar's status button).
+    Variants {
+        model: Quickshell.screens
+        ControlPopup {}
+    }
+
     // Audio-reactive Arch logo, centered on each monitor. Driven by cava the same
     // way the old side spectrum was; the triangle outline bends with the audio.
     Variants {
@@ -51,10 +60,9 @@ ShellRoot {
     // (Super+/ in hyprland.conf).
     ShortcutsPopup {}
 
-    // Super+M (hyprland.conf) toggles the Arch-logo control popup. The popup
-    // lives per-monitor inside each Bar, so rather than reach into a specific
-    // window we route through the ControlBus singleton, which opens the popup on
-    // whichever monitor currently has focus. One handler, never duplicated.
+    // Super+M (hyprland.conf) toggles the Arch-logo control popup. We route
+    // through the ControlBus singleton, which opens the popup on whichever
+    // monitor currently has focus. One handler, never duplicated.
     IpcHandler {
         target: "controlPopup"
         function toggle(): void { ControlBus.toggleFocused() }
