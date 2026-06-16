@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Io
+import QtQuick
 import "modules/common"
 import "modules/bar"
 import "modules/audiobars"
@@ -64,5 +65,18 @@ ShellRoot {
     IpcHandler {
         target: "controlPopup"
         function toggle(): void { ControlBus.toggleFocused() }
+    }
+
+    // Regenerate the wallpaper-derived palette at startup and whenever the
+    // wallpaper changes, then poke Theme to reload the JSON it produced.
+    Process {
+        id: colorGen
+        command: ["bash", (Quickshell.env("HOME") || "") + "/.config/quickshell/scripts/gen-colors.sh"]
+        onExited: Theme.reloadColors()
+    }
+    Component.onCompleted: colorGen.running = true
+    Connections {
+        target: ControlBus
+        function onWallpaperChanged() { colorGen.running = true }
     }
 }
