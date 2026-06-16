@@ -3,7 +3,7 @@ import Quickshell.Io
 import QtQuick
 import "modules/common"
 import "modules/bar"
-import "modules/audiobars"
+import "modules/archlogo"
 import "modules/launcher"
 import "modules/themeclock"
 import "modules/themeswitcher"
@@ -16,18 +16,11 @@ ShellRoot {
         Bar {}
     }
 
-    // cava-style audio spectrum down the right edge — only on the right-most
-    // monitor (greatest x), so it lives on the true outer edge of the desktop.
+    // Audio-reactive Arch logo, centered on each monitor. Driven by cava the same
+    // way the old side spectrum was; the triangle outline bends with the audio.
     Variants {
-        model: {
-            const screens = Quickshell.screens
-            if (!screens.length) return []
-            let best = screens[0]
-            for (const s of screens)
-                if (s.x > best.x) best = s
-            return [best]
-        }
-        AudioBars {}
+        model: Quickshell.screens
+        ArchLogo {}
     }
 
     // Per-monitor desktop clock owned by the active theme: each theme folder can
