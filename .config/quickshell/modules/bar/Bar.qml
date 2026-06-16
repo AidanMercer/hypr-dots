@@ -30,6 +30,7 @@ PanelWindow {
     // before the content so it paints underneath.
     Bubble {
         id: centerBubble
+        visible: ThemeConfig.bubbles
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         width: workspaces.width + 8 + statusButton.width + bar.bubblePad * 2
@@ -38,6 +39,7 @@ PanelWindow {
     // Glass pill behind the side readouts (CPU / RAM / battery).
     Bubble {
         id: rightBubble
+        visible: ThemeConfig.bubbles
         anchors.right: parent.right
         anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter

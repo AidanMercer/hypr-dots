@@ -1,2 +1,3 @@
 singleton Theme 1.0 Theme.qml
 singleton ControlBus 1.0 ControlBus.qml
+singleton ThemeConfig 1.0 ThemeConfig.qml

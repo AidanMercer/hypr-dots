@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Io
+import QtQuick
 import "modules/common"
 import "modules/bar"
 import "modules/audiobars"
@@ -64,5 +65,11 @@ ShellRoot {
     IpcHandler {
         target: "controlPopup"
         function toggle(): void { ControlBus.toggleFocused() }
+    }
+
+    // Re-read the active theme's config.toml whenever the wallpaper changes.
+    Connections {
+        target: ControlBus
+        function onWallpaperChanged() { ThemeConfig.reload() }
     }
 }
