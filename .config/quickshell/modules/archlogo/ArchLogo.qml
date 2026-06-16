@@ -22,8 +22,8 @@ PanelWindow {
     property var display: []                     // eased copy we actually draw
 
     // triangle geometry (px). triR = center → vertex; amp = loudest outward push.
-    readonly property real triR: 160
-    readonly property real amp: 30
+    readonly property real triR: 135
+    readonly property real amp: 26
 
     readonly property color glowColor: Theme.accent
     readonly property color coreColor: "#eef1ff"
@@ -183,16 +183,16 @@ PanelWindow {
             id: logo
             source: Qt.resolvedUrl("arch.svg")
             visible: false                         // source only; MultiEffect draws it
-            width: 200
-            height: 200
-            sourceSize.width: 400
-            sourceSize.height: 400
+            width: 170
+            height: 170
+            sourceSize.width: 340
+            sourceSize.height: 340
             fillMode: Image.PreserveAspectFit
             anchors.centerIn: parent
             // the arch ink is centered in its box, but the triangle's centroid sits
             // below its bbox center — lift the logo so its bbox lines up with the
-            // triangle's, giving equal gaps top and bottom. (measured, not eyeballed)
-            anchors.verticalCenterOffset: -40
+            // triangle's, giving equal gaps top and bottom. offset = -triR/4.
+            anchors.verticalCenterOffset: -34
             scale: 1 + root.pulse * 0.06
         }
 
