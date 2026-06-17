@@ -1,7 +1,7 @@
 # TODO
 
 ## Theming (wallpaper-driven)
-- [ ] frostify themed with the wallpaper theme
+- [x] frostify themed with the wallpaper theme
 - [ ] kitty better themed to the wallpaper
 - [ ] super fuzzel launcher should be custom themed
 - [ ] better lockscreen / per-theme lockscreens
@@ -18,3 +18,6 @@
 
 ## Wallpapers
 - [ ] more custom wallpapers + push to github
+
+
+Custom fastfetch
