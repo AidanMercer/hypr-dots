@@ -126,6 +126,7 @@ PanelWindow {
         const t = themeModel.get(i)
         if (!t || !t.wallpaper) return
         applying = true
+        root.pendingThemeDir = t.wallpaper.substring(0, t.wallpaper.lastIndexOf("/"))
         applyProc.command = ["awww", "img",
             "--transition-type", "fade",
             "--transition-duration", "0.7",
@@ -133,14 +134,22 @@ PanelWindow {
         applyProc.running = true
     }
 
+    property string pendingThemeDir: ""
+
     Process {
         id: applyProc
         running: false
         onExited: (code, status) => {
             ControlBus.notifyWallpaperChanged()   // let per-theme widgets reload
+            colorProc.command = ["bash", "-c",
+                '"$HOME/dotfiles/.config/hypr/theme-colors.sh" "$1"', "_", root.pendingThemeDir]
+            colorProc.running = true              // re-tint kitty/fuzzel/hyprlock
             root.closeMenu()
         }
     }
+
+    // regenerates the per-theme app palettes once the wallpaper has swapped
+    Process { id: colorProc; running: false }
 
     IpcHandler {
         target: "themeSwitcher"
