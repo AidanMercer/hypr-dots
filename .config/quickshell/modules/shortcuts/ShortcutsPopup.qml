@@ -63,6 +63,7 @@ PanelWindow {
             { title: "System", binds: [
                 { keys: ["Super", "M"],          desc: "Control center" },
                 { keys: ["Super", "Shift", "T"], desc: "Themes" },
+                { keys: ["Super", "Shift", "R"], desc: "Restart shell" },
                 { keys: ["Super", "L"],          desc: "Lock screen" },
                 { keys: ["Super", "Shift", "S"], desc: "Screenshot region" },
                 { keys: ["Super", "/"],          desc: "This sheet" }
