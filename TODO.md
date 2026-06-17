@@ -14,7 +14,8 @@
 
 ## Theme settings & layout
 - [ ] Win+Ctrl+T opens current-theme settings (toggle clock on/off, smaller bits, etc.)
-- [ ] auto-sizing + theme settings for large monitor vs laptop/work screen
+- [x] auto-sizing for large monitor vs laptop/work screen (done for moon)
+- [ ] theme settings for large monitor vs laptop/work screen
 
 ## Wallpapers
 - [ ] more custom wallpapers + push to github
