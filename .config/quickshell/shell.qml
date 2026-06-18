@@ -11,6 +11,7 @@ import "modules/themelyrics"
 import "modules/themeswitcher"
 import "modules/shortcuts"
 import "modules/osd"
+import "modules/lock"
 
 ShellRoot {
     id: shellRoot
@@ -66,6 +67,10 @@ ShellRoot {
 
     // Volume / brightness OSD; the XF86 media keys call into it over IPC.
     Osd {}
+
+    // Session lock — animated per-theme clock + PAM. Idle until triggered with
+    // `qs ipc call lock lock` (hypridle lock_cmd / loginctl lock-session).
+    Lock {}
 
     // Single app launcher window; toggled over IPC from the Super keybind.
     Launcher {}
