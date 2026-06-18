@@ -106,7 +106,10 @@ cat >"$out/hypr-colors.conf" <<EOF
 \$lock_fg = rgba(${fg}ff)
 \$lock_dim = rgba(${dim}ff)
 \$lock_accent = rgba(${accent}ff)
+\$lock_cyan = rgba(${accent2}ff)
+\$lock_magenta = rgba(${accent3}ff)
 \$lock_fail = rgba(${accent3}ff)
+\$lock_bg = rgba(${bg}ee)
 EOF
 
 # kitty reloads its config (includes and all) on SIGUSR1
