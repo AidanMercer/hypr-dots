@@ -5,13 +5,17 @@ import Quickshell.Wayland
 import Quickshell.Hyprland
 import "../common"
 
-// Fullscreen, transparent layer-shell overlay holding a "cheat sheet" card that
-// lists every keybind. Centred on the focused monitor; click the scrim, press
-// Esc, or hit any key to dismiss. Same proven scrim pattern as the launcher /
-// control popup (a HyprlandFocusGrab races the map and often misses).
+// Fullscreen, transparent layer-shell overlay holding a card with two tabs:
+//   • Shortcuts — a "cheat sheet" listing every keybind (hand-maintained).
+//   • Settings  — toggles for shell/system behaviour (currently: keep the
+//     laptop awake when the lid is shut, via a systemd-inhibit lock).
+// Centred on the focused monitor; click the scrim or press Esc to dismiss.
+// Same proven scrim pattern as the launcher / control popup (a
+// HyprlandFocusGrab races the map and often misses).
 //
 // Opened/closed over IPC:
-//   qs ipc call shortcuts toggle   (wired to Super+/ in hyprland.conf)
+//   qs ipc call shortcuts toggle     → Shortcuts tab (Super+/)
+//   qs ipc call shortcuts settings   → Settings tab  (Super+Shift+/)
 //
 // The bind list below is hand-maintained — if you add/rename a bind in
 // hyprland.conf, update the matching row here so the sheet stays honest.
@@ -20,13 +24,22 @@ PanelWindow {
 
     property bool open: false
     property bool closing: false        // keep mapped through the close fade
+    property int tab: 0                  // 0 = Shortcuts, 1 = Settings
+    property int settingsRow: 0          // cursor within the Settings tab
+    readonly property int settingsCount: 1
+
+    // ── keep-laptop-awake setting ──────────────────────────────────────
+    // Holds a logind block-inhibitor on handle-lid-switch while on, so
+    // closing the lid does nothing. Persisted across shell restarts.
+    property bool keepAwake: false
+
     // Captured at open() time so follow_mouse can't remap the window mid-use.
     property var targetScreen: null
     screen: targetScreen
 
     WlrLayershell.namespace: "quickshell-shortcuts"
     WlrLayershell.layer: WlrLayer.Overlay
-    // Grab the keyboard only while open so Esc/any-key reach the card; the
+    // Grab the keyboard only while open so Esc/keys reach the card; the
     // focused window keeps the keyboard the rest of the time.
     WlrLayershell.keyboardFocus: open ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
@@ -66,7 +79,8 @@ PanelWindow {
                 { keys: ["Super", "Shift", "R"], desc: "Restart shell" },
                 { keys: ["Super", "L"],          desc: "Lock screen" },
                 { keys: ["Super", "Shift", "S"], desc: "Screenshot region" },
-                { keys: ["Super", "/"],          desc: "This sheet" }
+                { keys: ["Super", "/"],          desc: "This sheet" },
+                { keys: ["Super", "Shift", "/"], desc: "Settings" }
             ]},
             { title: "Workspaces", binds: [
                 { keys: ["Super", "1 – 5"],            desc: "Switch workspace" },
@@ -84,15 +98,53 @@ PanelWindow {
                 { keys: ["Super", "Right-drag"],     desc: "Resize window" },
                 { keys: ["Super", "Shift", "← →"],   desc: "Send to monitor" },
                 { keys: ["Super", "Shift", "↑ ↓"],   desc: "Move in layout" }
+            ]},
+            { title: "Lyrics", binds: [
+                { keys: ["Super", "]"],          desc: "Sync later" },
+                { keys: ["Super", "["],          desc: "Sync earlier" },
+                { keys: ["Super", "Shift", "\\"], desc: "Reset sync" }
             ]}
         ]
     ]
 
+    // ── persistence + inhibitor ─────────────────────────────────────────
+    // State file is read synchronously at startup so the inhibitor comes back
+    // up in the same state it was left in.
+    FileView {
+        id: stateFile
+        path: Quickshell.stateDir + "/keep-awake"
+        blockLoading: true
+        preload: true
+        printErrors: false
+    }
+
+    function setKeepAwake(v) {
+        root.keepAwake = v
+        stateFile.setText(v ? "1\n" : "0\n")
+    }
+
+    Component.onCompleted: root.keepAwake = stateFile.text().trim() === "1"
+
+    // While running, logind ignores the lid switch. Killed on shell exit, which
+    // releases the lock — Component.onCompleted re-arms it on next start.
+    Process {
+        id: lidInhibitor
+        running: root.keepAwake
+        command: ["systemd-inhibit",
+                  "--what=handle-lid-switch",
+                  "--who=frostify shell",
+                  "--why=Keep laptop awake when the lid is shut",
+                  "--mode=block",
+                  "sleep", "infinity"]
+    }
+
     // ── lifecycle ───────────────────────────────────────────────────────
-    function openMenu() {
+    function openMenu(which) {
         const m = Hyprland.focusedMonitor
         targetScreen = m ? (Quickshell.screens.find(s => s.name === m.name) ?? null) : null
         closing = false
+        tab = which
+        settingsRow = 0
         open = true
         Qt.callLater(card.forceActiveFocus)
     }
@@ -106,7 +158,11 @@ PanelWindow {
 
     IpcHandler {
         target: "shortcuts"
-        function toggle(): void { root.open ? root.closeMenu() : root.openMenu() }
+        function toggle(): void { root.open ? root.closeMenu() : root.openMenu(0) }
+        function settings(): void {
+            if (root.open && root.tab === 1) root.closeMenu()
+            else root.openMenu(1)
+        }
     }
 
     // ── scrim: transparent (no dimming), click-outside to dismiss ───────
@@ -158,13 +214,33 @@ PanelWindow {
             border.width: 1
             focus: true
 
-            // Esc or any non-modifier key dismisses — a help sheet has nothing to
-            // navigate, so "press anything to get back to work" is the whole UX.
+            Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+
+            // Esc / click-outside always close. Left/Right switch tabs. The
+            // Settings tab is interactive (Up/Down + Enter/Space), so only the
+            // passive Shortcuts tab keeps the old "press anything to dismiss".
             Keys.onPressed: (e) => {
-                if (!root.modifierKeys.includes(e.key)) {
-                    root.closeMenu()
-                    e.accepted = true
+                if (e.key === Qt.Key_Escape) { root.closeMenu(); e.accepted = true; return }
+                if (e.key === Qt.Key_Left)  { root.tab = 0; e.accepted = true; return }
+                if (e.key === Qt.Key_Right) { root.tab = 1; e.accepted = true; return }
+
+                if (root.tab === 1) {
+                    if (e.key === Qt.Key_Up) {
+                        root.settingsRow = Math.max(0, root.settingsRow - 1); e.accepted = true; return
+                    }
+                    if (e.key === Qt.Key_Down) {
+                        root.settingsRow = Math.min(root.settingsCount - 1, root.settingsRow + 1); e.accepted = true; return
+                    }
+                    if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
+                        if (root.settingsRow === 0) root.setKeepAwake(!root.keepAwake)
+                        e.accepted = true; return
+                    }
+                    e.accepted = true   // swallow stray keys instead of closing
+                    return
                 }
+
+                // Shortcuts tab: any non-modifier key dismisses.
+                if (!root.modifierKeys.includes(e.key)) { root.closeMenu(); e.accepted = true }
             }
 
             // Swallow clicks on the card so they don't fall through to the scrim.
@@ -205,19 +281,52 @@ PanelWindow {
                             font.family: Theme.icon
                             font.pixelSize: 16
                         }
-                        Text {
+
+                        // tab switcher
+                        Row {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Keyboard Shortcuts"
-                            color: Theme.textBright
-                            font.pixelSize: 15
-                            font.weight: Font.DemiBold
+                            spacing: 4
+
+                            Repeater {
+                                model: ["Keyboard Shortcuts", "Settings"]
+
+                                delegate: Rectangle {
+                                    id: tabChip
+                                    required property int index
+                                    required property var modelData
+                                    readonly property bool current: root.tab === index
+                                    height: 24
+                                    width: tabText.implicitWidth + 22
+                                    radius: 7
+                                    color: current ? Theme.rowSelected
+                                                   : (tabHover.hovered ? Theme.rowHover : "transparent")
+                                    border.color: current ? Theme.glassBorder : "transparent"
+                                    border.width: 1
+
+                                    Text {
+                                        id: tabText
+                                        anchors.centerIn: parent
+                                        text: tabChip.modelData
+                                        color: tabChip.current ? Theme.textBright : Theme.textMuted
+                                        font.pixelSize: 13
+                                        font.weight: tabChip.current ? Font.DemiBold : Font.Normal
+                                    }
+
+                                    HoverHandler { id: tabHover }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.tab = tabChip.index
+                                    }
+                                }
+                            }
                         }
                     }
 
                     Text {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "Esc to close"
+                        text: root.tab === 1 ? "← → switch · Esc close" : "Esc to close"
                         color: Theme.textMuted
                         font.pixelSize: 11
                     }
@@ -225,10 +334,11 @@ PanelWindow {
 
                 Rectangle { width: parent.width; height: 1; color: Theme.divider }
 
-                // ── two columns of sections ──
+                // ── Shortcuts tab: two columns of sections ──
                 Row {
                     width: parent.width
                     spacing: 36
+                    visible: root.tab === 0
 
                     Repeater {
                         model: root.columns
@@ -323,6 +433,80 @@ PanelWindow {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+
+                // ── Settings tab ──
+                Column {
+                    width: parent.width
+                    spacing: 10
+                    visible: root.tab === 1
+
+                    // row 0 — keep laptop awake when lid shut
+                    Rectangle {
+                        width: parent.width
+                        height: 56
+                        radius: 10
+                        color: root.settingsRow === 0 ? Theme.rowSelected
+                                                      : (awakeHover.hovered ? Theme.rowHover : "transparent")
+                        border.color: root.settingsRow === 0 ? Theme.glassBorder : "transparent"
+                        border.width: 1
+
+                        HoverHandler { id: awakeHover }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { root.settingsRow = 0; root.setKeepAwake(!root.keepAwake) }
+                        }
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 16
+                            anchors.right: toggle.left
+                            anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 3
+
+                            Text {
+                                text: "Keep laptop awake when lid is shut"
+                                color: Theme.textBright
+                                font.pixelSize: 14
+                                font.weight: Font.DemiBold
+                            }
+                            Text {
+                                width: parent.width
+                                text: "Hold a system lock so closing the lid won't suspend."
+                                color: Theme.textMuted
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        // pill toggle
+                        Rectangle {
+                            id: toggle
+                            anchors.right: parent.right
+                            anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 44
+                            height: 24
+                            radius: 12
+                            color: root.keepAwake ? Theme.accent : Theme.trackBg
+                            border.color: root.keepAwake ? Theme.accent : Theme.glassBorder
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 140 } }
+
+                            Rectangle {
+                                width: 18
+                                height: 18
+                                radius: 9
+                                color: root.keepAwake ? Theme.textBright : Theme.textMuted
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: root.keepAwake ? parent.width - width - 3 : 3
+                                Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                Behavior on color { ColorAnimation { duration: 140 } }
                             }
                         }
                     }
