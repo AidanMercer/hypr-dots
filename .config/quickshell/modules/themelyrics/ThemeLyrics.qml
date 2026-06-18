@@ -31,6 +31,12 @@ PanelWindow {
     property string lyricsPath: ""
     property int retriesLeft: 10
 
+    // Only ONE instance (the primary screen) should run singletons like the cava
+    // silence-detector; the renderer/clock are fine per-screen. lyrics.qml defaults
+    // isPrimary=false and we forward the real value onto it once it loads.
+    readonly property bool isPrimary:
+        Quickshell.screens.length > 0 && root.modelData === Quickshell.screens[0]
+
     function fileUrl(p) {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
     }
@@ -51,10 +57,15 @@ PanelWindow {
     }
 
     Loader {
+        id: lyricsLoader
         anchors.fill: parent
         active: root.lyricsPath !== ""
         source: root.lyricsPath !== "" ? root.fileUrl(root.lyricsPath) : ""
+        onLoaded: if (item && item.hasOwnProperty("isPrimary")) item.isPrimary = root.isPrimary
     }
+    // keep it correct if the screen list reorders after load
+    onIsPrimaryChanged: if (lyricsLoader.item && lyricsLoader.item.hasOwnProperty("isPrimary"))
+                            lyricsLoader.item.isPrimary = root.isPrimary
 
     Component.onCompleted: queryProc.running = true
 
