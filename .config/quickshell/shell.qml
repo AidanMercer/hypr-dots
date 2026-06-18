@@ -13,6 +13,8 @@ import "modules/shortcuts"
 import "modules/osd"
 
 ShellRoot {
+    id: shellRoot
+
     Variants {
         model: Quickshell.screens
         Bar {}
@@ -82,6 +84,37 @@ ShellRoot {
     IpcHandler {
         target: "controlPopup"
         function toggle(): void { ControlBus.toggleFocused() }
+    }
+
+    // Live lyric-sync calibration. The desktop lyric visualizer renders per-monitor
+    // (theme lyrics.qml, instantiated once per screen) and can't import a shell
+    // singleton, so the audio-latency offset is shared through a tiny state file:
+    // THIS one handler writes it (never duplicated), every lyrics.qml instance
+    // watches it. Nudged by ear from $mod+bracket keys (hyprland.conf).
+    property int lyricOffsetMs: -250
+    function setLyricOffset(v) {
+        shellRoot.lyricOffsetMs = Math.max(-1500, Math.min(1500, v))
+        lyricOffsetFile.setText(String(shellRoot.lyricOffsetMs) + "\n")
+    }
+    FileView {
+        id: lyricOffsetFile
+        path: Quickshell.stateDir + "/lyric-offset"
+        blockLoading: true
+        preload: true
+        printErrors: false
+        onLoaded: {
+            const v = parseInt(text().trim(), 10)
+            if (!isNaN(v)) shellRoot.lyricOffsetMs = Math.max(-1500, Math.min(1500, v))
+        }
+    }
+    IpcHandler {
+        target: "lyricOffset"
+        // +offset = lyrics earlier, -offset = lyrics later (cancels output latency)
+        function earlier(): void { shellRoot.setLyricOffset(shellRoot.lyricOffsetMs + 20) }
+        function later():   void { shellRoot.setLyricOffset(shellRoot.lyricOffsetMs - 20) }
+        function nudge(ms: int): void { shellRoot.setLyricOffset(shellRoot.lyricOffsetMs + ms) }
+        function reset():   void { shellRoot.setLyricOffset(-250) }
+        function get():     string { return String(shellRoot.lyricOffsetMs) }
     }
 
     // Re-read the active theme's config.toml whenever the wallpaper changes.
