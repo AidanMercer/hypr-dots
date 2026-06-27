@@ -26,6 +26,15 @@ Item {
     property bool connecting: false
     property bool authFailed: false
 
+    // right-click context menu. menuSsid is the network whose menu is open
+    // ("" = closed); menuX/Y are its top-left anchor in root coordinates. Lives
+    // at root level (not in a row) so the list's clip doesn't eat it.
+    property string menuSsid: ""
+    property real menuX: 0
+    property real menuY: 0
+    function openMenu(ssid, x, y) { menuSsid = ssid; menuX = x; menuY = y }
+    function closeMenu() { menuSsid = "" }
+
     // height of the scrollable wifi area (≈ 5 rows); keep this constant
     readonly property int listHeight: 172
 
@@ -44,7 +53,25 @@ Item {
 
     onActiveChanged: {
         if (active) { wifiListProc.running = true; savedProc.running = true }
-        else cancelPassword()
+        else { cancelPassword(); closeMenu() }
+    }
+
+    // Context-appropriate actions for a network. connectTo() handles the
+    // open/saved/secured branching (incl. the password prompt); disconnect and
+    // forget go straight to nmcli on the saved connection profile.
+    function menuActions(net) {
+        if (!net) return []
+        const a = []
+        const saved = savedConns.indexOf(net.ssid) >= 0
+        if (net.inUse) a.push({ label: "Disconnect", fn: () => runNm(["nmcli", "connection", "down", "id", net.ssid]) })
+        else a.push({ label: "Connect", fn: () => connectTo(net.ssid) })
+        if (saved) a.push({ label: "Forget", fn: () => runNm(["nmcli", "connection", "delete", "id", net.ssid]), danger: true })
+        return a
+    }
+
+    function runNm(cmd) {
+        nmActionProc.command = cmd
+        nmActionProc.running = true
     }
 
     function splitNm(line) {
@@ -158,6 +185,17 @@ Item {
         running: false
         stdout: StdioCollector {
             onStreamFinished: root.savedConns = text.trim().split("\n").filter(s => s.length > 0)
+        }
+    }
+
+    // disconnect / forget from the context menu — refresh both lists after.
+    Process {
+        id: nmActionProc
+        running: false
+        onExited: (code, status) => {
+            savedProc.running = true
+            wifiListProc.running = true
+            root.connectionChanged()
         }
     }
 
@@ -303,7 +341,15 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.connectTo(netRow.modelData.ssid)
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        onClicked: (mouse) => {
+                            if (mouse.button === Qt.RightButton) {
+                                const p = mapToItem(root, mouse.x, mouse.y)
+                                root.openMenu(netRow.modelData.ssid, p.x, p.y)
+                            } else {
+                                root.connectTo(netRow.modelData.ssid)
+                            }
+                        }
                     }
                 }
             }
@@ -420,11 +466,73 @@ Item {
         Text {
             visible: root.pendingSsid === ""
             width: parent.width
-            text: "Click to connect. Secured networks ask for a password."
+            text: "Click to connect, right-click for more. Secured networks ask for a password."
             color: Theme.textMuted
             font.pixelSize: 10
             wrapMode: Text.WordWrap
             topPadding: 4
+        }
+    }
+
+    // ── right-click context menu (root-level so the list clip can't trim it) ──
+    // Catches any press outside the menu to dismiss it.
+    MouseArea {
+        anchors.fill: parent
+        visible: root.menuSsid !== ""
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onPressed: root.closeMenu()
+    }
+
+    Rectangle {
+        id: ctxMenu
+        visible: root.menuSsid !== ""
+        readonly property var actions: root.menuActions(root.networks.find(n => n.ssid === root.menuSsid))
+        readonly property int rowH: 30
+        width: 172
+        height: actions.length * rowH + 8
+        radius: 12
+        color: Qt.rgba(0.10, 0.10, 0.13, 0.98)
+        border.width: 1
+        border.color: Theme.divider
+        // clamp inside root; flip above the cursor when it'd overflow the bottom.
+        x: Math.max(0, Math.min(root.menuX, root.width - width))
+        y: (root.menuY + height > root.height) ? Math.max(0, root.menuY - height) : root.menuY
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 4
+
+            Repeater {
+                model: ctxMenu.actions
+
+                delegate: Rectangle {
+                    required property var modelData
+                    width: parent.width
+                    height: ctxMenu.rowH
+                    radius: 8
+                    color: itemMa.containsMouse ? Theme.rowHover : "transparent"
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData.label
+                        font.pixelSize: 12
+                        color: modelData.danger ? Theme.danger : Theme.textTertiary
+                    }
+
+                    MouseArea {
+                        id: itemMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            modelData.fn()
+                            root.closeMenu()
+                        }
+                    }
+                }
+            }
         }
     }
 }
