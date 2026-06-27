@@ -322,7 +322,7 @@ Item {
                 visible: root.deviceList.length === 0
                 anchors.centerIn: parent
                 width: parent.width
-                text: !root.adapter.enabled ? "Turn Bluetooth on to scan for devices." : "Searching…"
+                text: (root.ready && root.adapter.enabled) ? "Searching…" : "Turn Bluetooth on to scan for devices."
                 color: Theme.textMuted
                 font.pixelSize: 12
                 font.italic: true
