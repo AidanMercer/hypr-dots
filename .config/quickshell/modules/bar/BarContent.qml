@@ -38,6 +38,24 @@ Item {
         width: resourceBubble.width + root.bubblePad * 2
     }
 
+    // Glass pill behind the now-playing widget on the left; hides with it.
+    Bubble {
+        id: leftBubble
+        visible: ThemeConfig.bubbles && mediaWidget.active
+        anchors.left: parent.left
+        anchors.leftMargin: 8
+        anchors.verticalCenter: parent.verticalCenter
+        width: mediaWidget.width + root.bubblePad * 2
+    }
+
+    // Top-left: now-playing (MPRIS). Bare unless a theme turns bubbles on.
+    MediaWidget {
+        id: mediaWidget
+        anchors.left: parent.left
+        anchors.leftMargin: 8 + (ThemeConfig.bubbles ? root.bubblePad : 6)
+        anchors.verticalCenter: parent.verticalCenter
+    }
+
     // Top-right: live CPU / RAM / GPU usage.
     ResourceBubble {
         id: resourceBubble
