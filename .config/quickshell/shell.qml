@@ -131,4 +131,16 @@ ShellRoot {
         target: ControlBus
         function onWallpaperChanged() { ThemeConfig.reload() }
     }
+
+    // Hot-reload the active theme's widgets without swapping the wallpaper. The
+    // theme files live outside the qs config tree, so quickshell's own watcher
+    // never sees edits to them — bind this to a key (e.g. `qs ipc call themeReload
+    // reload`) to force the loaders to re-read from disk while iterating.
+    IpcHandler {
+        target: "themeReload"
+        function reload(): void {
+            ThemeConfig.reload()
+            ControlBus.notifyThemeReload()
+        }
+    }
 }
