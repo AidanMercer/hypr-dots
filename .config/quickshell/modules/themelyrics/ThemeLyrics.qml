@@ -30,6 +30,7 @@ PanelWindow {
 
     property string lyricsPath: ""
     property int retriesLeft: 10
+    property int reloadNonce: 0
 
     // Only ONE instance (the primary screen) should run singletons like the cava
     // silence-detector; the renderer/clock are fine per-screen. lyrics.qml defaults
@@ -60,8 +61,17 @@ PanelWindow {
         id: lyricsLoader
         anchors.fill: parent
         active: root.lyricsPath !== ""
-        source: root.lyricsPath !== "" ? root.fileUrl(root.lyricsPath) : ""
+        source: root.lyricsPath !== "" ? root.fileUrl(root.lyricsPath) + "?v=" + root.reloadNonce : ""
         onLoaded: if (item && item.hasOwnProperty("isPrimary")) item.isPrimary = root.isPrimary
+    }
+
+    // Hot-reload: watch the loaded file ourselves (quickshell only watches its own
+    // config tree, not the theme dirs) and bump the ?v= nonce on save to recompile.
+    FileView {
+        path: root.lyricsPath
+        watchChanges: root.lyricsPath !== ""
+        printErrors: false
+        onFileChanged: root.reloadNonce++
     }
     // keep it correct if the screen list reorders after load
     onIsPrimaryChanged: if (lyricsLoader.item && lyricsLoader.item.hasOwnProperty("isPrimary"))
@@ -82,6 +92,11 @@ PanelWindow {
     Connections {
         target: ControlBus
         function onWallpaperChanged() {
+            root.retriesLeft = 10
+            queryProc.running = true
+        }
+        function onThemeReloadRequested() {
+            root.reloadNonce++
             root.retriesLeft = 10
             queryProc.running = true
         }

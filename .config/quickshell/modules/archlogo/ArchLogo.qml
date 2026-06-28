@@ -32,6 +32,7 @@ PanelWindow {
     property string cavaPath: ""                 // theme's cava.qml, "" if none
     property bool queryDone: false               // awww answered at least once
     property int retriesLeft: 10
+    property int reloadNonce: 0
 
     // Encode each segment so theme names with spaces ("your name") survive.
     function fileUrl(p) {
@@ -66,7 +67,16 @@ PanelWindow {
     Loader {
         anchors.fill: parent
         active: root.cavaPath !== ""
-        source: root.cavaPath !== "" ? root.fileUrl(root.cavaPath) : ""
+        source: root.cavaPath !== "" ? root.fileUrl(root.cavaPath) + "?v=" + root.reloadNonce : ""
+    }
+
+    // Hot-reload: watch the loaded file ourselves (quickshell only watches its own
+    // config tree, not the theme dirs) and bump the ?v= nonce on save to recompile.
+    FileView {
+        path: root.cavaPath
+        watchChanges: root.cavaPath !== ""
+        printErrors: false
+        onFileChanged: root.reloadNonce++
     }
 
     // default Arch visualizer — once we know the theme ships no cava.qml
@@ -97,6 +107,12 @@ PanelWindow {
     Connections {
         target: ControlBus
         function onWallpaperChanged() {
+            root.queryDone = false
+            root.retriesLeft = 10
+            queryProc.running = true
+        }
+        function onThemeReloadRequested() {
+            root.reloadNonce++
             root.queryDone = false
             root.retriesLeft = 10
             queryProc.running = true

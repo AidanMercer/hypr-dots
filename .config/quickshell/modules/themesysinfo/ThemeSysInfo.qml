@@ -28,6 +28,7 @@ PanelWindow {
 
     property string infoPath: ""
     property int retriesLeft: 10
+    property int reloadNonce: 0
 
     function fileUrl(p) {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
@@ -51,7 +52,16 @@ PanelWindow {
     Loader {
         anchors.fill: parent
         active: root.infoPath !== ""
-        source: root.infoPath !== "" ? root.fileUrl(root.infoPath) : ""
+        source: root.infoPath !== "" ? root.fileUrl(root.infoPath) + "?v=" + root.reloadNonce : ""
+    }
+
+    // Hot-reload: watch the loaded file ourselves (quickshell only watches its own
+    // config tree, not the theme dirs) and bump the ?v= nonce on save to recompile.
+    FileView {
+        path: root.infoPath
+        watchChanges: root.infoPath !== ""
+        printErrors: false
+        onFileChanged: root.reloadNonce++
     }
 
     Component.onCompleted: queryProc.running = true
@@ -69,6 +79,11 @@ PanelWindow {
     Connections {
         target: ControlBus
         function onWallpaperChanged() {
+            root.retriesLeft = 10
+            queryProc.running = true
+        }
+        function onThemeReloadRequested() {
+            root.reloadNonce++
             root.retriesLeft = 10
             queryProc.running = true
         }

@@ -29,6 +29,7 @@ PanelWindow {
     property string barPath: ""                  // theme's bar.qml, "" if none
     property bool queryDone: false
     property int retriesLeft: 10
+    property int reloadNonce: 0
 
     function fileUrl(p) {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
@@ -60,8 +61,17 @@ PanelWindow {
         id: themeLoader
         anchors.fill: parent
         active: bar.barPath !== ""
-        source: bar.barPath !== "" ? bar.fileUrl(bar.barPath) : ""
+        source: bar.barPath !== "" ? bar.fileUrl(bar.barPath) + "?v=" + bar.reloadNonce : ""
         onLoaded: if (item) item.barScreen = bar.screen
+    }
+
+    // Hot-reload: watch the loaded file ourselves (quickshell only watches its own
+    // config tree, not the theme dirs) and bump the ?v= nonce on save to recompile.
+    FileView {
+        path: bar.barPath
+        watchChanges: bar.barPath !== ""
+        printErrors: false
+        onFileChanged: bar.reloadNonce++
     }
 
     // default bar — once we know the theme ships no bar.qml
@@ -90,6 +100,12 @@ PanelWindow {
     Connections {
         target: ControlBus
         function onWallpaperChanged() {
+            bar.queryDone = false
+            bar.retriesLeft = 10
+            queryProc.running = true
+        }
+        function onThemeReloadRequested() {
+            bar.reloadNonce++
             bar.queryDone = false
             bar.retriesLeft = 10
             queryProc.running = true

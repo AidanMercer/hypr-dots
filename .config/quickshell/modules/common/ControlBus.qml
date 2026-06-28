@@ -27,6 +27,11 @@ QtObject {
     signal wallpaperChanged()
     function notifyWallpaperChanged() { wallpaperChanged() }
 
+    // Force the theme loaders to re-read their widget files from disk (hot-reload),
+    // even when the wallpaper hasn't changed. Fired by the themeReload IPC.
+    signal themeReloadRequested()
+    function notifyThemeReload() { themeReloadRequested() }
+
     // Toggle the popup on a specific monitor (used by the StatusButton click).
     function toggle(name) {
         openMonitor = (openMonitor === name) ? "" : name

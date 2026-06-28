@@ -29,6 +29,7 @@ PanelWindow {
 
     property string clockPath: ""
     property int retriesLeft: 10
+    property int reloadNonce: 0
 
     // Encode each segment so theme names with spaces ("your name") survive.
     function fileUrl(p) {
@@ -55,7 +56,16 @@ PanelWindow {
     Loader {
         anchors.fill: parent
         active: root.clockPath !== ""
-        source: root.clockPath !== "" ? root.fileUrl(root.clockPath) : ""
+        source: root.clockPath !== "" ? root.fileUrl(root.clockPath) + "?v=" + root.reloadNonce : ""
+    }
+
+    // Hot-reload: watch the loaded file ourselves (quickshell only watches its own
+    // config tree, not the theme dirs) and bump the ?v= nonce on save to recompile.
+    FileView {
+        path: root.clockPath
+        watchChanges: root.clockPath !== ""
+        printErrors: false
+        onFileChanged: root.reloadNonce++
     }
 
     Component.onCompleted: queryProc.running = true
@@ -75,6 +85,11 @@ PanelWindow {
     Connections {
         target: ControlBus
         function onWallpaperChanged() {
+            root.retriesLeft = 10
+            queryProc.running = true
+        }
+        function onThemeReloadRequested() {
+            root.reloadNonce++
             root.retriesLeft = 10
             queryProc.running = true
         }
