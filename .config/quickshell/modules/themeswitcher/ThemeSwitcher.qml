@@ -126,15 +126,48 @@ PanelWindow {
         const t = themeModel.get(i)
         if (!t || !t.wallpaper) return
         applying = true
-        root.pendingThemeDir = t.wallpaper.substring(0, t.wallpaper.lastIndexOf("/"))
+        applyWallpaper(t.wallpaper)
+    }
+
+    // Swap to a wallpaper path — shared by the overlay and the `theme` IPC. The
+    // applyProc.onExited handler fans out to the per-theme widgets + retints apps.
+    function applyWallpaper(wallpaper) {
+        if (!wallpaper) return
+        root.pendingThemeDir = wallpaper.substring(0, wallpaper.lastIndexOf("/"))
         applyProc.command = ["awww", "img",
             "--transition-type", "fade",
             "--transition-duration", "0.7",
-            t.wallpaper]
+            wallpaper]
         applyProc.running = true
     }
 
     property string pendingThemeDir: ""
+
+    // --- headless theme switching over IPC (no overlay) -----------------
+    // qs ipc call theme next | prev | apply <name> | current
+    // "Current" is whatever awww is actually showing on the focused monitor
+    // (via ActiveTheme), so next/prev cycle relative to reality, not the carousel.
+    function _indexOfDir(dir) {
+        for (let i = 0; i < themeModel.count; i++) {
+            const w = themeModel.get(i).wallpaper
+            if (w && w.substring(0, w.lastIndexOf("/")) === dir) return i
+        }
+        return -1
+    }
+    function cycleTheme(delta) {
+        if (applying || themeModel.count === 0) return
+        let i = _indexOfDir(ActiveTheme.focusedDir)
+        i = (i < 0) ? 0 : ((i + delta) % themeModel.count + themeModel.count) % themeModel.count
+        const t = themeModel.get(i)
+        if (t && t.wallpaper) applyWallpaper(t.wallpaper)
+    }
+    function applyByName(name) {
+        if (applying) return
+        for (let i = 0; i < themeModel.count; i++) {
+            const t = themeModel.get(i)
+            if (t.name === name) { applyWallpaper(t.wallpaper); return }
+        }
+    }
 
     Process {
         id: applyProc
@@ -155,6 +188,20 @@ PanelWindow {
         target: "themeSwitcher"
         function toggle(): void { root.open ? root.closeMenu() : root.openMenu() }
     }
+
+    IpcHandler {
+        target: "theme"
+        function next(): void { root.cycleTheme(1) }
+        function prev(): void { root.cycleTheme(-1) }
+        function apply(name: string): void { root.applyByName(name) }
+        function current(): string {
+            const d = ActiveTheme.focusedDir
+            return d ? d.substring(d.lastIndexOf("/") + 1) : ""
+        }
+    }
+
+    // scan once at startup so the `theme` IPC has the list before the overlay opens
+    Component.onCompleted: scanProc.running = true
 
     // ---- keyboard ------------------------------------------------------
     Item {
