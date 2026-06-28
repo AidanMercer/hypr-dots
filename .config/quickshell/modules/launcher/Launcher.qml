@@ -39,12 +39,36 @@ PanelWindow {
     // service populated; .values is the plain JS array of entries.
     readonly property var allApps: DesktopEntries.applications.values
     readonly property var appResults: filterApps(query, allApps)
+    // A pure arithmetic query (or one forced with a leading "=") gets a synthetic
+    // calculator row pinned to the TOP; activate() copies its result.
+    readonly property var calcResult: evalMath(query)
+    readonly property bool hasCalc: calcResult !== null
     // Whenever the user has typed something, append a synthetic web-search row as
     // the last result so it's always visible and reachable by arrow keys.
     // activate() decides whether a given row launches an app or runs the search.
-    property var results: query.length > 0
-        ? appResults.concat([{ webSearch: true }])
-        : appResults
+    property var results: {
+        if (query.length === 0) return appResults
+        const base = appResults.concat([{ webSearch: true }])
+        return hasCalc ? [{ calc: true }].concat(base) : base
+    }
+
+    // Evaluate a numeric expression safely: only digits/operators/parens pass the
+    // gate (no letters → nothing to reference), so the eval can't reach any scope.
+    // A plain number isn't treated as math unless the user leads with "=".
+    function evalMath(raw) {
+        let s = (raw || "").trim()
+        const forced = s.startsWith("=")
+        if (forced) s = s.slice(1).trim()
+        if (s.length === 0) return null
+        if (!/^[0-9+\-*/%.()\s]+$/.test(s)) return null
+        if (!forced && !/[0-9]\s*[-+*/%]\s*[-+(]*\s*[0-9]/.test(s)) return null
+        try {
+            const v = Function('"use strict"; return (' + s + ')')()
+            if (typeof v === "number" && isFinite(v))
+                return { expr: s, value: Math.round(v * 1e10) / 1e10 }
+        } catch (e) {}
+        return null
+    }
 
     function filterApps(q, apps) {
         const list = (apps || []).filter(a => a && a.name && !a.noDisplay)
@@ -77,12 +101,18 @@ PanelWindow {
         closeMenu()
     }
 
-    // Activate a result row: the synthetic web-search row runs the search,
-    // every other row is a real app to launch.
+    // Activate a result row: the calc row copies its result, the synthetic
+    // web-search row runs the search, every other row is a real app to launch.
     function activate(item) {
         if (!item) return
-        if (item.webSearch) root.searchWeb(root.query)
+        if (item.calc) root.copyResult()
+        else if (item.webSearch) root.searchWeb(root.query)
         else root.launch(item)
+    }
+    function copyResult() {
+        if (!root.hasCalc) return
+        Quickshell.execDetached(["wl-copy", "--", String(root.calcResult.value)])
+        closeMenu()
     }
 
     // Opens the query in the default browser (zen, via xdg-open). %1 is the
@@ -293,6 +323,8 @@ PanelWindow {
                             // modelData is unreliable, so use the index instead.
                             readonly property bool isWeb: root.query.length > 0
                                 && index === root.results.length - 1
+                            // calc row, when present, is always pinned to index 0
+                            readonly property bool isCalc: root.hasCalc && index === 0
                             width: ListView.view.width
                             height: 42
                             radius: 11
@@ -305,7 +337,7 @@ PanelWindow {
                             // magnifier glyph in its place.
                             Rectangle {
                                 id: dot
-                                visible: !appRow.isWeb
+                                visible: !appRow.isWeb && !appRow.isCalc
                                 anchors.left: parent.left
                                 anchors.leftMargin: 14
                                 anchors.verticalCenter: parent.verticalCenter
@@ -319,11 +351,12 @@ PanelWindow {
                             }
 
                             Text {
-                                visible: appRow.isWeb
+                                visible: appRow.isWeb || appRow.isCalc
                                 anchors.left: parent.left
                                 anchors.leftMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: String.fromCodePoint(0xF0349) // nf-md-magnify
+                                // nf-md-equal on the calc row, nf-md-magnify on web
+                                text: String.fromCodePoint(appRow.isCalc ? 0xF0DF1 : 0xF0349)
                                 font.family: Theme.icon
                                 font.pixelSize: 16
                                 color: Theme.accent
