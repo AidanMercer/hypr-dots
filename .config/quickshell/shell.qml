@@ -17,6 +17,11 @@ import "modules/notifications"
 ShellRoot {
     id: shellRoot
 
+    // Construct the shared audio feed up front. Theme widgets consume it through
+    // its mirror file (they can't import the singleton), so without this reference
+    // nothing would ever instantiate it and cava would never start.
+    readonly property var audioBus: AudioBus
+
     Variants {
         model: Quickshell.screens
         Bar {}
