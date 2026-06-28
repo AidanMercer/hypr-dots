@@ -26,35 +26,31 @@ PanelWindow {
     implicitHeight: Theme.barHeight
     color: "transparent"
 
+    property string themeDir: ActiveTheme.dirFor(bar.screen ? bar.screen.name : "")
     property string barPath: ""                  // theme's bar.qml, "" if none
-    property bool queryDone: false
-    property int retriesLeft: 10
+    property bool checked: false
     property int reloadNonce: 0
 
     function fileUrl(p) {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
     }
 
+    // ActiveTheme already knows this monitor's theme folder (one shared awww query);
+    // we just confirm it ships a bar.qml. `checked` flips once the answer is in, so
+    // the default bar only appears after we know there's no theme bar.
     Process {
-        id: queryProc
+        id: existProc
         command: ["bash", "-c",
-            'name="$1"; ' +
-            'line=$(awww query 2>/dev/null | grep -m1 -- "$name:"); ' +
-            'img=$(printf "%s" "$line" | sed -n "s/.*image: //p"); ' +
-            '[ -n "$img" ] || exit 0; ' +
-            'printf "__OK__\\n"; ' +
-            'c="$(dirname "$img")/bar.qml"; ' +
-            '[ -f "$c" ] && printf "%s" "$c"',
-            "_", bar.screen ? bar.screen.name : ""]
+            'd="$1"; [ -n "$d" ] && [ -f "$d/bar.qml" ] && printf "%s/bar.qml" "$d"',
+            "_", bar.themeDir]
         stdout: StdioCollector {
             onStreamFinished: {
-                if (text.indexOf("__OK__") === -1) return
-                bar.retriesLeft = 0
-                bar.queryDone = true
-                bar.barPath = (text.split("__OK__")[1] || "").trim()
+                bar.barPath = text.trim()
+                bar.checked = true
             }
         }
     }
+    onThemeDirChanged: { bar.checked = false; existProc.running = true }
 
     // theme's own bar — self-contained, gets its screen injected after load
     Loader {
@@ -77,7 +73,7 @@ PanelWindow {
     // default bar — once we know the theme ships no bar.qml
     Loader {
         anchors.fill: parent
-        active: bar.queryDone && bar.barPath === ""
+        active: bar.checked && bar.barPath === ""
         sourceComponent: defaultContent
     }
     Component {
@@ -85,30 +81,14 @@ PanelWindow {
         BarContent { barWindow: bar }
     }
 
-    Component.onCompleted: queryProc.running = true
-
-    Timer {
-        interval: 2000
-        repeat: true
-        running: !bar.queryDone && bar.retriesLeft > 0
-        onTriggered: {
-            bar.retriesLeft--
-            queryProc.running = true
-        }
-    }
+    Component.onCompleted: existProc.running = true
 
     Connections {
         target: ControlBus
-        function onWallpaperChanged() {
-            bar.queryDone = false
-            bar.retriesLeft = 10
-            queryProc.running = true
-        }
         function onThemeReloadRequested() {
             bar.reloadNonce++
-            bar.queryDone = false
-            bar.retriesLeft = 10
-            queryProc.running = true
+            bar.checked = false
+            existProc.running = true
         }
     }
 }

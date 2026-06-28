@@ -29,9 +29,9 @@ PanelWindow {
     color: "transparent"
     mask: Region {}                              // click-through scenery
 
+    property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
     property string cavaPath: ""                 // theme's cava.qml, "" if none
-    property bool queryDone: false               // awww answered at least once
-    property int retriesLeft: 10
+    property bool checked: false                 // existence check has returned
     property int reloadNonce: 0
 
     // Encode each segment so theme names with spaces ("your name") survive.
@@ -39,29 +39,22 @@ PanelWindow {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
     }
 
-    // Ask awww what THIS monitor is displaying; the "__OK__" marker proves awww
-    // answered (vs. not-painted-yet at login). Anything after it is the theme's
-    // cava.qml path, emitted only if the file exists.
+    // ActiveTheme already knows this monitor's theme folder (one shared awww query);
+    // we just confirm it ships a cava.qml. `checked` flips once the answer is in, so
+    // the default Arch visualizer only appears after we know there's no theme cava.
     Process {
-        id: queryProc
+        id: existProc
         command: ["bash", "-c",
-            'name="$1"; ' +
-            'line=$(awww query 2>/dev/null | grep -m1 -- "$name:"); ' +
-            'img=$(printf "%s" "$line" | sed -n "s/.*image: //p"); ' +
-            '[ -n "$img" ] || exit 0; ' +
-            'printf "__OK__\\n"; ' +
-            'c="$(dirname "$img")/cava.qml"; ' +
-            '[ -f "$c" ] && printf "%s" "$c"',
-            "_", root.modelData ? root.modelData.name : ""]
+            'd="$1"; [ -n "$d" ] && [ -f "$d/cava.qml" ] && printf "%s/cava.qml" "$d"',
+            "_", root.themeDir]
         stdout: StdioCollector {
             onStreamFinished: {
-                if (text.indexOf("__OK__") === -1) return
-                root.retriesLeft = 0
-                root.queryDone = true
-                root.cavaPath = (text.split("__OK__")[1] || "").trim()
+                root.cavaPath = text.trim()
+                root.checked = true
             }
         }
     }
+    onThemeDirChanged: { root.checked = false; existProc.running = true }
 
     // theme's own visualizer
     Loader {
@@ -82,7 +75,7 @@ PanelWindow {
     // default Arch visualizer — once we know the theme ships no cava.qml
     Loader {
         anchors.fill: parent
-        active: root.queryDone && root.cavaPath === ""
+        active: root.checked && root.cavaPath === ""
         sourceComponent: archComponent
     }
     Component {
@@ -90,32 +83,14 @@ PanelWindow {
         ArchVisualizer {}
     }
 
-    Component.onCompleted: queryProc.running = true
-
-    // awww may not have painted this output yet (login, hotplug), so an empty
-    // answer isn't final — ask again a few times before giving up.
-    Timer {
-        interval: 2000
-        repeat: true
-        running: !root.queryDone && root.retriesLeft > 0
-        onTriggered: {
-            root.retriesLeft--
-            queryProc.running = true
-        }
-    }
+    Component.onCompleted: existProc.running = true
 
     Connections {
         target: ControlBus
-        function onWallpaperChanged() {
-            root.queryDone = false
-            root.retriesLeft = 10
-            queryProc.running = true
-        }
         function onThemeReloadRequested() {
             root.reloadNonce++
-            root.queryDone = false
-            root.retriesLeft = 10
-            queryProc.running = true
+            root.checked = false
+            existProc.running = true
         }
     }
 }

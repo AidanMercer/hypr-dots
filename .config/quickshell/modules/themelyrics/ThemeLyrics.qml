@@ -28,8 +28,8 @@ PanelWindow {
     mask: Region {}
     visible: lyricsPath !== ""
 
+    property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
     property string lyricsPath: ""
-    property int retriesLeft: 10
     property int reloadNonce: 0
 
     // Only ONE instance (the primary screen) should run singletons like the cava
@@ -42,20 +42,19 @@ PanelWindow {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
     }
 
+    // ActiveTheme already knows this monitor's theme folder (one shared awww query);
+    // we just confirm it ships a lyrics.qml. Re-runs when the folder changes (theme
+    // switch) or a hot-reload is forced.
     Process {
-        id: queryProc
+        id: existProc
         command: ["bash", "-c",
-            'name="$1"; ' +
-            'line=$(awww query 2>/dev/null | grep -m1 -- "$name:"); ' +
-            'img=$(printf "%s" "$line" | sed -n "s/.*image: //p"); ' +
-            '[ -n "$img" ] || exit 0; ' +
-            'l="$(dirname "$img")/lyrics.qml"; ' +
-            '[ -f "$l" ] && printf "%s" "$l"',
-            "_", root.modelData ? root.modelData.name : ""]
+            'd="$1"; [ -n "$d" ] && [ -f "$d/lyrics.qml" ] && printf "%s/lyrics.qml" "$d"',
+            "_", root.themeDir]
         stdout: StdioCollector {
             onStreamFinished: root.lyricsPath = text.trim()
         }
     }
+    onThemeDirChanged: existProc.running = true
 
     Loader {
         id: lyricsLoader
@@ -77,28 +76,13 @@ PanelWindow {
     onIsPrimaryChanged: if (lyricsLoader.item && lyricsLoader.item.hasOwnProperty("isPrimary"))
                             lyricsLoader.item.isPrimary = root.isPrimary
 
-    Component.onCompleted: queryProc.running = true
-
-    Timer {
-        interval: 2000
-        repeat: true
-        running: root.lyricsPath === "" && root.retriesLeft > 0
-        onTriggered: {
-            root.retriesLeft--
-            queryProc.running = true
-        }
-    }
+    Component.onCompleted: existProc.running = true
 
     Connections {
         target: ControlBus
-        function onWallpaperChanged() {
-            root.retriesLeft = 10
-            queryProc.running = true
-        }
         function onThemeReloadRequested() {
             root.reloadNonce++
-            root.retriesLeft = 10
-            queryProc.running = true
+            existProc.running = true
         }
     }
 }

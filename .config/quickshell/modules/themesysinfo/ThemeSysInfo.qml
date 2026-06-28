@@ -26,28 +26,27 @@ PanelWindow {
     mask: Region {}
     visible: infoPath !== ""
 
+    property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
     property string infoPath: ""
-    property int retriesLeft: 10
     property int reloadNonce: 0
 
     function fileUrl(p) {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
     }
 
+    // ActiveTheme already knows this monitor's theme folder (one shared awww query);
+    // we just confirm it ships a sysinfo.qml. Re-runs when the folder changes (theme
+    // switch) or a hot-reload is forced.
     Process {
-        id: queryProc
+        id: existProc
         command: ["bash", "-c",
-            'name="$1"; ' +
-            'line=$(awww query 2>/dev/null | grep -m1 -- "$name:"); ' +
-            'img=$(printf "%s" "$line" | sed -n "s/.*image: //p"); ' +
-            '[ -n "$img" ] || exit 0; ' +
-            's="$(dirname "$img")/sysinfo.qml"; ' +
-            '[ -f "$s" ] && printf "%s" "$s"',
-            "_", root.modelData ? root.modelData.name : ""]
+            'd="$1"; [ -n "$d" ] && [ -f "$d/sysinfo.qml" ] && printf "%s/sysinfo.qml" "$d"',
+            "_", root.themeDir]
         stdout: StdioCollector {
             onStreamFinished: root.infoPath = text.trim()
         }
     }
+    onThemeDirChanged: existProc.running = true
 
     Loader {
         anchors.fill: parent
@@ -64,28 +63,13 @@ PanelWindow {
         onFileChanged: root.reloadNonce++
     }
 
-    Component.onCompleted: queryProc.running = true
-
-    Timer {
-        interval: 2000
-        repeat: true
-        running: root.infoPath === "" && root.retriesLeft > 0
-        onTriggered: {
-            root.retriesLeft--
-            queryProc.running = true
-        }
-    }
+    Component.onCompleted: existProc.running = true
 
     Connections {
         target: ControlBus
-        function onWallpaperChanged() {
-            root.retriesLeft = 10
-            queryProc.running = true
-        }
         function onThemeReloadRequested() {
             root.reloadNonce++
-            root.retriesLeft = 10
-            queryProc.running = true
+            existProc.running = true
         }
     }
 }
