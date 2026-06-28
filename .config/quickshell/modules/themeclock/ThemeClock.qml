@@ -27,8 +27,8 @@ PanelWindow {
     mask: Region {}                         // click-through: it's just scenery
     visible: clockPath !== ""
 
+    property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
     property string clockPath: ""
-    property int retriesLeft: 10
     property int reloadNonce: 0
 
     // Encode each segment so theme names with spaces ("your name") survive.
@@ -36,22 +36,19 @@ PanelWindow {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
     }
 
-    // Ask awww what THIS monitor is displaying, then emit the theme's clock.qml
-    // path iff it exists. sed grabs everything after "image: " (the path).
+    // ActiveTheme already knows this monitor's theme folder (one shared awww query);
+    // we just confirm it ships a clock.qml. Re-runs when the folder changes (theme
+    // switch) or a hot-reload is forced.
     Process {
-        id: queryProc
+        id: existProc
         command: ["bash", "-c",
-            'name="$1"; ' +
-            'line=$(awww query 2>/dev/null | grep -m1 -- "$name:"); ' +
-            'img=$(printf "%s" "$line" | sed -n "s/.*image: //p"); ' +
-            '[ -n "$img" ] || exit 0; ' +
-            'c="$(dirname "$img")/clock.qml"; ' +
-            '[ -f "$c" ] && printf "%s" "$c"',
-            "_", root.modelData ? root.modelData.name : ""]
+            'd="$1"; [ -n "$d" ] && [ -f "$d/clock.qml" ] && printf "%s/clock.qml" "$d"',
+            "_", root.themeDir]
         stdout: StdioCollector {
             onStreamFinished: root.clockPath = text.trim()
         }
     }
+    onThemeDirChanged: existProc.running = true
 
     Loader {
         anchors.fill: parent
@@ -68,30 +65,13 @@ PanelWindow {
         onFileChanged: root.reloadNonce++
     }
 
-    Component.onCompleted: queryProc.running = true
-
-    // awww may not have painted this output yet (login, monitor hotplug), so an
-    // empty answer isn't final — ask again a few times before giving up.
-    Timer {
-        interval: 2000
-        repeat: true
-        running: root.clockPath === "" && root.retriesLeft > 0
-        onTriggered: {
-            root.retriesLeft--
-            queryProc.running = true
-        }
-    }
+    Component.onCompleted: existProc.running = true
 
     Connections {
         target: ControlBus
-        function onWallpaperChanged() {
-            root.retriesLeft = 10
-            queryProc.running = true
-        }
         function onThemeReloadRequested() {
             root.reloadNonce++
-            root.retriesLeft = 10
-            queryProc.running = true
+            existProc.running = true
         }
     }
 }
