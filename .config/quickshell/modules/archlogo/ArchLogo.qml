@@ -44,9 +44,6 @@ PanelWindow {
     // the default Arch visualizer only appears after we know there's no theme cava.
     Process {
         id: existProc
-        command: ["bash", "-c",
-            'd="$1"; [ -n "$d" ] && [ -f "$d/cava.qml" ] && printf "%s/cava.qml" "$d"',
-            "_", root.themeDir]
         stdout: StdioCollector {
             onStreamFinished: {
                 root.cavaPath = text.trim()
@@ -54,7 +51,18 @@ PanelWindow {
             }
         }
     }
-    onThemeDirChanged: { root.checked = false; existProc.running = true }
+    // Build the lookup command from the CURRENT themeDir at call time, NOT via a
+    // declarative `command: [...root.themeDir]` binding. On a theme switch the
+    // onThemeDirChanged handler fires BEFORE such a binding re-evaluates, so the
+    // process would launch with the PREVIOUS theme's dir and load the wrong widget
+    // (the one-behind bug). Reading themeDir at start time always sees the new value.
+    function rescan() {
+        existProc.command = ["bash", "-c",
+            'd="$1"; [ -n "$d" ] && [ -f "$d/cava.qml" ] && printf "%s/cava.qml" "$d"',
+            "_", root.themeDir]
+        existProc.running = true
+    }
+    onThemeDirChanged: { root.checked = false; rescan() }
 
     // theme's own visualizer
     Loader {
@@ -83,14 +91,14 @@ PanelWindow {
         ArchVisualizer {}
     }
 
-    Component.onCompleted: existProc.running = true
+    Component.onCompleted: rescan()
 
     Connections {
         target: ControlBus
         function onThemeReloadRequested() {
             root.reloadNonce++
             root.checked = false
-            existProc.running = true
+            root.rescan()
         }
     }
 }

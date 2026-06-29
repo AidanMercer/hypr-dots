@@ -40,9 +40,6 @@ PanelWindow {
     // the default bar only appears after we know there's no theme bar.
     Process {
         id: existProc
-        command: ["bash", "-c",
-            'd="$1"; [ -n "$d" ] && [ -f "$d/bar.qml" ] && printf "%s/bar.qml" "$d"',
-            "_", bar.themeDir]
         stdout: StdioCollector {
             onStreamFinished: {
                 bar.barPath = text.trim()
@@ -50,7 +47,18 @@ PanelWindow {
             }
         }
     }
-    onThemeDirChanged: { bar.checked = false; existProc.running = true }
+    // Build the lookup command from the CURRENT themeDir at call time, NOT via a
+    // declarative `command: [...bar.themeDir]` binding. On a theme switch the
+    // onThemeDirChanged handler fires BEFORE such a binding re-evaluates, so the
+    // process would launch with the PREVIOUS theme's dir and load the wrong widget
+    // (the one-behind bug). Reading themeDir at start time always sees the new value.
+    function rescan() {
+        existProc.command = ["bash", "-c",
+            'd="$1"; [ -n "$d" ] && [ -f "$d/bar.qml" ] && printf "%s/bar.qml" "$d"',
+            "_", bar.themeDir]
+        existProc.running = true
+    }
+    onThemeDirChanged: { bar.checked = false; rescan() }
 
     // theme's own bar — self-contained, gets its screen injected after load
     Loader {
@@ -81,14 +89,14 @@ PanelWindow {
         BarContent { barWindow: bar }
     }
 
-    Component.onCompleted: existProc.running = true
+    Component.onCompleted: rescan()
 
     Connections {
         target: ControlBus
         function onThemeReloadRequested() {
             bar.reloadNonce++
             bar.checked = false
-            existProc.running = true
+            bar.rescan()
         }
     }
 }

@@ -47,14 +47,22 @@ PanelWindow {
     // switch) or a hot-reload is forced.
     Process {
         id: existProc
-        command: ["bash", "-c",
-            'd="$1"; [ -n "$d" ] && [ -f "$d/lyrics.qml" ] && printf "%s/lyrics.qml" "$d"',
-            "_", root.themeDir]
         stdout: StdioCollector {
             onStreamFinished: root.lyricsPath = text.trim()
         }
     }
-    onThemeDirChanged: existProc.running = true
+    // Build the lookup command from the CURRENT themeDir at call time, NOT via a
+    // declarative `command: [...root.themeDir]` binding. On a theme switch the
+    // onThemeDirChanged handler fires BEFORE such a binding re-evaluates, so the
+    // process would launch with the PREVIOUS theme's dir and load the wrong widget
+    // (the one-behind bug). Reading themeDir at start time always sees the new value.
+    function rescan() {
+        existProc.command = ["bash", "-c",
+            'd="$1"; [ -n "$d" ] && [ -f "$d/lyrics.qml" ] && printf "%s/lyrics.qml" "$d"',
+            "_", root.themeDir]
+        existProc.running = true
+    }
+    onThemeDirChanged: rescan()
 
     Loader {
         id: lyricsLoader
@@ -76,13 +84,13 @@ PanelWindow {
     onIsPrimaryChanged: if (lyricsLoader.item && lyricsLoader.item.hasOwnProperty("isPrimary"))
                             lyricsLoader.item.isPrimary = root.isPrimary
 
-    Component.onCompleted: existProc.running = true
+    Component.onCompleted: rescan()
 
     Connections {
         target: ControlBus
         function onThemeReloadRequested() {
             root.reloadNonce++
-            existProc.running = true
+            root.rescan()
         }
     }
 }
