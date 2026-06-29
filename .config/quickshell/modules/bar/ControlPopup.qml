@@ -385,6 +385,33 @@ PanelWindow {
                             font.letterSpacing: 4
                             color: root.accentCol
                         }
+
+                        // live audio EQ — bass/mid/high straight off AudioBus. dances
+                        // while anything's playing, drops flat + dim when it goes quiet.
+                        Item {
+                            id: eq
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 13; height: 12
+                            opacity: (AudioBus.ready && !AudioBus.silent) ? 1 : 0.25
+                            Behavior on opacity { NumberAnimation { duration: 220 } }
+
+                            Repeater {
+                                model: [
+                                    { px: 0,  band: "bass", col: root.magentaCol },
+                                    { px: 5,  band: "mid",  col: root.accentCol },
+                                    { px: 10, band: "high", col: root.cyanCol }
+                                ]
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    x: modelData.px
+                                    width: 3
+                                    anchors.bottom: parent.bottom
+                                    color: modelData.col
+                                    height: 2 + 10 * Math.min(1, AudioBus[modelData.band] || 0)
+                                    Behavior on height { NumberAnimation { duration: 80 } }
+                                }
+                            }
+                        }
                     }
 
                     Row {
