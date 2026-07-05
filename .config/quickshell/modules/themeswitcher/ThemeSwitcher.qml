@@ -58,6 +58,16 @@ PanelWindow {
     property real bounceX: 0
     property real bounceY: 0
 
+    // the whole rail is driven by this one animated scalar: plate sizes and
+    // positions derive from it per-frame, so gaps stay exact mid-flight
+    // instead of separate x/width Behaviors retargeting each other
+    property real railPos: 0
+    onCurChanged: railPos = cur
+    Behavior on railPos {
+        id: railBeh
+        NumberAnimation { duration: root.navMs; easing.type: Easing.OutQuint }
+    }
+
     // one scan finds each theme's wallpaper*.* variants (skipping *.still.png
     // extractions), makes missing video stills, and grabs the theme's own
     // accents from config.toml so plates can carry their own palette
@@ -158,6 +168,9 @@ PanelWindow {
         syncActive()
         open = true
         cur = activeTheme >= 0 ? activeTheme : 0
+        railBeh.enabled = false    // land on the plate, don't slide to it
+        railPos = cur
+        railBeh.enabled = true
         scanProc.running = true    // rescan each open so new folders show
         Qt.callLater(() => keyCatcher.forceActiveFocus())
     }
@@ -393,18 +406,30 @@ PanelWindow {
                 readonly property color ownAccent: modelData.accent !== ""
                                                    ? "#" + modelData.accent : Theme.accent
 
-                width: focusedPlate ? root.cardW : root.smallW
-                height: focusedPlate ? root.cardH : root.smallH
-                Behavior on width { NumberAnimation { duration: root.navMs; easing.type: Easing.OutQuint } }
-                Behavior on height { NumberAnimation { duration: root.navMs; easing.type: Easing.OutQuint } }
+                // proximity to the rail cursor: 1 = focused, 0 = a full slot away.
+                // size and x both derive from railPos, so a plate grows exactly
+                // as fast as its neighbors are pushed aside — constant gaps, no
+                // Behaviors chasing each other's moving targets
+                readonly property real prox: Math.max(0, 1 - Math.abs(index - root.railPos))
+                width: root.smallW + (root.cardW - root.smallW) * prox
+                height: root.smallH + (root.cardH - root.smallH) * prox
 
-                readonly property real railX: offset === 0 ? 0
-                    : (offset > 0 ? 1 : -1) * (root.cardW / 2 + root.railGap
-                        + (Math.abs(offset) - 1) * (root.smallW + root.railGap)
-                        + root.smallW / 2)
+                readonly property real railX: {
+                    const p = root.railPos
+                    const slot = root.smallW + root.railGap
+                    const extra = root.cardW - root.smallW
+                    const lo = Math.floor(p), hi = Math.ceil(p), f = p - lo
+                    const eLo = extra * Math.max(0, 1 - (p - lo))
+                    const eHi = hi === lo ? 0 : extra * Math.max(0, 1 - (hi - p))
+                    // center of slot i: base spacing, shifted by the half-widths
+                    // the (up to two) swelling plates push outward
+                    const C = (i) => i * slot
+                        + (lo === i ? 0 : (lo < i ? 0.5 : -0.5) * eLo)
+                        + (hi === i || hi === lo ? 0 : (hi < i ? 0.5 : -0.5) * eHi)
+                    return C(index) - (C(lo) * (1 - f) + (hi === lo ? 0 : C(hi) * f))
+                }
                 x: root.width / 2 + railX + root.bounceX - width / 2
                 y: root.hangY - height / 2 + (focusedPlate ? root.bounceY : 0)
-                Behavior on x { NumberAnimation { duration: root.navMs; easing.type: Easing.OutQuint } }
 
                 z: focusedPlate ? 10 : (5 - Math.abs(offset))
                 visible: Math.abs(offset) <= 4
