@@ -1,20 +1,27 @@
 pragma Singleton
 import QtQuick
 
+// Shared design tokens for the repo's own chrome (popup tabs, default bar, osd).
+// Accents come straight from ThemeConfig; the text ramp and glass are derived
+// from the `text` / `glass` tokens, so a theme's config.toml can restyle the
+// shared surfaces without any per-tab edits. With the stock tokens the derived
+// ramp lands on the old hand-picked hexes (±1/255). `cyber` still gates the
+// HUD-flavored tinting on the popup.
 QtObject {
-    // When the active theme opts into cyberpunk chrome (config.toml: cyber = true),
-    // the accent-bearing colors below retint to the theme's neon palette so the
-    // shared control-popup tabs (Network/Sound/Bluetooth/Power/Display) match the
-    // moon HUD without per-tab edits. Everything is gated on ThemeConfig.cyber, so
-    // glass themes are byte-for-byte unaffected. ThemeConfig hardcodes its own
-    // defaults (no Theme import), so there is no singleton cycle here.
+    id: root
+
     readonly property bool cyber: ThemeConfig.cyber
     readonly property color neon: ThemeConfig.accent
     readonly property color cyan: ThemeConfig.accent2
     readonly property color magenta: ThemeConfig.accent3
     readonly property color amber: ThemeConfig.accentWarn
 
-    readonly property color glassBg: Qt.rgba(0.06, 0.06, 0.08, 0.62)
+    function mix(a, b, t) {
+        return Qt.rgba(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1)
+    }
+    readonly property color _white: "#ffffff"
+
+    readonly property color glassBg: Qt.rgba(ThemeConfig.glass.r, ThemeConfig.glass.g, ThemeConfig.glass.b, 0.62)
     readonly property color glassBorder: Qt.rgba(1, 1, 1, 0.24)
     readonly property color glassHighlight: Qt.rgba(1, 1, 1, 0.10)
 
@@ -27,19 +34,19 @@ QtObject {
     readonly property color trackBg: cyber ? Qt.rgba(neon.r, neon.g, neon.b, 0.10) : Qt.rgba(1, 1, 1, 0.08)
     readonly property color trackBg2: cyber ? Qt.rgba(cyan.r, cyan.g, cyan.b, 0.14) : Qt.rgba(1, 1, 1, 0.10)
 
-    readonly property color textPrimary: "#e6e6f0"
-    readonly property color textBright: "#ffffff"
-    readonly property color textSecondary: "#c4c4d0"
-    readonly property color textTertiary: "#d4d4dc"
-    readonly property color textMuted: "#a0a4b0"
-    readonly property color textDim: "#a8acb6"
+    readonly property color textPrimary: ThemeConfig.text
+    readonly property color textBright: mix(ThemeConfig.text, _white, 0.8)
+    readonly property color textSecondary: mix(ThemeConfig.text, ThemeConfig.glass, 0.16)
+    readonly property color textTertiary: mix(ThemeConfig.text, ThemeConfig.glass, 0.08)
+    readonly property color textMuted: mix(ThemeConfig.text, ThemeConfig.glass, 0.32)
+    readonly property color textDim: mix(ThemeConfig.text, ThemeConfig.glass, 0.27)
 
-    readonly property color accent: cyber ? neon : "#a8b5e8"
-    readonly property color danger: cyber ? magenta : "#e8919b"
-    readonly property color warning: cyber ? amber : "#e8c89b"
-    readonly property color dangerHover: cyber ? Qt.rgba(magenta.r, magenta.g, magenta.b, 0.16) : Qt.rgba(0.91, 0.45, 0.50, 0.13)
+    readonly property color accent: ThemeConfig.accent
+    readonly property color danger: magenta
+    readonly property color warning: amber
+    readonly property color dangerHover: Qt.rgba(magenta.r, magenta.g, magenta.b, cyber ? 0.16 : 0.13)
     readonly property color volGradStart: cyber ? neon : "#8a99e8"
-    readonly property color volGradEnd: cyber ? cyan : "#c8a5e8"
+    readonly property color volGradEnd: cyan
     readonly property color volGradMuteStart: "#555"
     readonly property color volGradMuteEnd: "#666"
     readonly property color thumbBorder: cyber ? Qt.rgba(0, 0, 0, 0.55) : Qt.rgba(0, 0, 0, 0.25)
@@ -49,7 +56,6 @@ QtObject {
     readonly property int bubbleRadius: 16
     readonly property int popupRadius: 20
 
-    // match the moon HUD's mono face when cyber; harmless fallback otherwise
-    readonly property string mono: cyber ? "Noto Sans Mono" : "monospace"
+    readonly property string mono: ThemeConfig.fontMono
     readonly property string icon: "Symbols Nerd Font"
 }
