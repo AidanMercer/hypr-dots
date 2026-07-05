@@ -14,7 +14,7 @@ var COLOR_KEYS = {
     text: "#e6e6f0",
     glass: "#0f0f14",
 }
-var STRING_KEYS = { font_mono: "monospace" }
+var STRING_KEYS = { font_mono: "monospace", bar_position: "top" }
 
 var DEFAULTS = (function () {
     var d = {}

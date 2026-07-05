@@ -18,12 +18,19 @@ PanelWindow {
 
     WlrLayershell.namespace: "quickshell-bar"
 
+    // themes pick the edge via bar_position in their config.toml; a vertical
+    // bar reserves its width instead of its height
+    readonly property string barEdge: pal.barPosition
+    readonly property bool vertical: barEdge === "left" || barEdge === "right"
+
     anchors {
-        top: true
-        left: true
-        right: true
+        top: bar.vertical || bar.barEdge !== "bottom"
+        bottom: bar.vertical || bar.barEdge === "bottom"
+        left: bar.barEdge !== "right"
+        right: bar.barEdge === "right" || !bar.vertical
     }
     implicitHeight: Theme.barHeight
+    implicitWidth: Theme.barHeight
     color: "transparent"
 
     property string themeDir: ActiveTheme.dirFor(bar.screen ? bar.screen.name : "")

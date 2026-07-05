@@ -42,6 +42,8 @@ PanelWindow {
     property string chromePath: ""
     property int chromeNonce: 0
     property ThemePalette pal: ThemePalette { themeDir: root.themeDir }
+    // this monitor's bar edge — the card hangs off whichever side the bar is on
+    readonly property string barEdge: pal.barPosition
     readonly property var chrome: chromeLoader.item
 
     readonly property color cardBg: chrome ? chrome.cardBg : Theme.glassBg
@@ -206,12 +208,19 @@ PanelWindow {
         id: morph
         width: card.width
         height: card.height
-        // top-centre, just under the bar
-        x: Math.max(8, (root.width - width) / 2)
-        y: Theme.barHeight + 4
+        // horizontal bar: centred just past it; vertical bar: tucked in beside it
+        x: root.barEdge === "left" ? Theme.barHeight + 4
+         : root.barEdge === "right" ? root.width - width - Theme.barHeight - 4
+         : Math.max(8, (root.width - width) / 2)
+        y: root.barEdge === "left" || root.barEdge === "right" ? 8
+         : root.barEdge === "bottom" ? root.height - height - Theme.barHeight - 4
+         : Theme.barHeight + 4
         opacity: 0
         scale: 0.78
-        transformOrigin: Item.Top
+        transformOrigin: root.barEdge === "left" ? Item.TopLeft
+                       : root.barEdge === "right" ? Item.TopRight
+                       : root.barEdge === "bottom" ? Item.Bottom
+                       : Item.Top
 
         states: State {
             name: "shown"

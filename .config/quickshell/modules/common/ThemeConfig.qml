@@ -21,6 +21,7 @@ QtObject {
     property color text: Tokens.DEFAULTS.text
     property color glass: Tokens.DEFAULTS.glass
     property string fontMono: Tokens.DEFAULTS.font_mono
+    property string barPosition: Tokens.DEFAULTS.bar_position
     property int retriesLeft: 10
 
     function reload() { retriesLeft = 10; queryProc.running = true }
@@ -41,6 +42,7 @@ QtObject {
         root.text = t.text
         root.glass = t.glass
         root.fontMono = t.font_mono
+        root.barPosition = t.bar_position
     }
 
     property Process _query: Process {

@@ -20,6 +20,7 @@ QtObject {
     property color text: Tokens.DEFAULTS.text
     property color glass: Tokens.DEFAULTS.glass
     property string fontMono: Tokens.DEFAULTS.font_mono
+    property string barPosition: Tokens.DEFAULTS.bar_position
 
     // per-machine shrink: the laptop's eDP-1 panel makes the desktop widgets
     // read too big; the desktop has no eDP-1 so it stays 1.0
@@ -39,6 +40,7 @@ QtObject {
         text = t.text
         glass = t.glass
         fontMono = t.font_mono
+        barPosition = t.bar_position
     }
 
     // command built at call time, not bound — same one-behind trap as the loaders

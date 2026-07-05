@@ -57,7 +57,11 @@ Scope {
         color: "transparent"
 
         anchors { top: true; right: true }
-        margins { top: Theme.barHeight + 8; right: 10 }
+        margins {
+            // only drop below the bar when there actually is one at the top
+            top: (ThemeConfig.barPosition === "top" ? Theme.barHeight : 0) + 8
+            right: (ThemeConfig.barPosition === "right" ? Theme.barHeight : 0) + 10
+        }
         implicitWidth: 360
         implicitHeight: Math.max(1, col.implicitHeight)
 
@@ -82,7 +86,7 @@ Scope {
                     width: parent.width
                     radius: Theme.cyber ? 3 : 14
                     color: Theme.cyber ? Qt.rgba(0.04, 0.04, 0.07, 0.96)
-                                       : Qt.rgba(0.10, 0.10, 0.13, 0.94)
+                                       : Qt.rgba(ThemeConfig.glass.r, ThemeConfig.glass.g, ThemeConfig.glass.b, 0.94)
                     border.width: 1
                     border.color: Theme.cyber ? Theme.neon : Theme.glassBorder
                     implicitHeight: layout.implicitHeight + 24

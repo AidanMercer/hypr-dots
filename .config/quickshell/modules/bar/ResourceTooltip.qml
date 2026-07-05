@@ -35,9 +35,12 @@ PanelWindow {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
     // Anchor only top+right so the surface is just big enough to hold the
-    // card — the rest of the screen stays click-through.
-    anchors { top: true; right: true }
-    margins.top: Theme.barHeight + 4
+    // card — the rest of the screen stays click-through. Flips under the bar
+    // when the bar sits at the bottom (default content only runs horizontal).
+    readonly property bool belowBar: ThemeConfig.barPosition !== "bottom"
+    anchors { top: belowBar; bottom: !belowBar; right: true }
+    margins.top: belowBar ? Theme.barHeight + 4 : 0
+    margins.bottom: belowBar ? 0 : Theme.barHeight + 4
     margins.right: anchorRightMargin
 
     exclusionMode: ExclusionMode.Ignore
@@ -60,7 +63,7 @@ PanelWindow {
         border.width: 1
         opacity: 0
         scale: 0.94
-        transformOrigin: Item.TopRight
+        transformOrigin: root.belowBar ? Item.TopRight : Item.BottomRight
 
         states: State {
             name: "shown"

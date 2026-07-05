@@ -6,11 +6,14 @@ import "../common"
 
 Item {
     id: root
-    width: wsRow.width
-    height: Theme.bubbleHeight
+    width: root.vertical ? Theme.bubbleHeight : wsRow.width
+    height: root.vertical ? wsRow.height : Theme.bubbleHeight
 
     // The Hyprland monitor this bar lives on; each bar passes its own.
     required property var monitor
+
+    // stack the slots top-to-bottom for a vertical bar
+    property bool vertical: false
 
     // A strip of `wsCount` workspaces that PAGES in blocks of 10: page 1 is
     // 1..10, page 2 is 11..20, etc. Each slot shows the icon of an app living
@@ -85,9 +88,10 @@ Item {
                     : Quickshell.iconPath("application-x-executable")
     }
 
-    Row {
+    Grid {
         id: wsRow
         anchors.centerIn: parent
+        columns: root.vertical ? 1 : root.wsCount
         spacing: root.slotSpacing
 
         Repeater {
