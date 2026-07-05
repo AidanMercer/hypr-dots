@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
+import "../common"
 
 // The visual surface of the lock screen, reused by both the safe preview window
 // and the real WlSessionLock. It draws the blurred wallpaper and then loads the
@@ -61,7 +62,13 @@ Item {
     // ---- the theme's own animated clock ------------------------------------
     function fileUrl(p) { return "file://" + p.split("/").map(encodeURIComponent).join("/") }
     property string clockPath: ""
+    property bool wantsPal: false
     property int retriesLeft: 10
+
+    property ThemePalette themePal: ThemePalette {
+        themeDir: root.clockPath !== "" ? root.clockPath.replace(/\/[^/]*$/, "") : ""
+    }
+
     Process {
         id: clockQuery
         command: ["bash", "-c",
@@ -70,14 +77,29 @@ Item {
             'else line=$(awww query 2>/dev/null | head -1); fi; ' +
             'img=$(printf "%s" "$line" | sed -n "s/.*image: //p"); ' +
             '[ -n "$img" ] || exit 0; ' +
-            'c="$(dirname "$img")/clock.qml"; [ -f "$c" ] && printf "%s" "$c"',
+            'c="$(dirname "$img")/clock.qml"; [ -f "$c" ] || exit 0; ' +
+            'printf "%s" "$c"; grep -q "property var pal" "$c" && printf "\\tPAL"; true',
             "_", root.screenName]
-        stdout: StdioCollector { onStreamFinished: root.clockPath = text.trim() }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const parts = text.trim().split("\t")
+                const changed = parts[0] !== root.clockPath || (parts.length > 1) !== root.wantsPal
+                root.wantsPal = parts.length > 1
+                root.clockPath = parts[0]
+                if (changed) root.remountClock()
+            }
+        }
     }
     Loader {
+        id: clockLoader
         anchors.fill: parent
-        active: root.clockPath !== ""
-        source: root.clockPath !== "" ? root.fileUrl(root.clockPath) : ""
+    }
+    // setSource so the clock gets `pal` as an initial property, same as the
+    // desktop loaders — its bindings never see pal undefined
+    function remountClock() {
+        if (root.clockPath === "") { clockLoader.source = ""; return }
+        clockLoader.setSource(root.fileUrl(root.clockPath),
+                              root.wantsPal ? { pal: root.themePal } : {})
     }
     Timer {
         interval: 1500; repeat: true

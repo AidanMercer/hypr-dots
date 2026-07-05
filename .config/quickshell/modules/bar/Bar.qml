@@ -29,7 +29,10 @@ PanelWindow {
     property string themeDir: ActiveTheme.dirFor(bar.screen ? bar.screen.name : "")
     property string barPath: ""                  // theme's bar.qml, "" if none
     property bool checked: false
+    property bool wantsPal: false                // widget declares `property var pal`
     property int reloadNonce: 0
+
+    property ThemePalette pal: ThemePalette { themeDir: bar.themeDir }
 
     function fileUrl(p) {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
@@ -42,8 +45,12 @@ PanelWindow {
         id: existProc
         stdout: StdioCollector {
             onStreamFinished: {
-                bar.barPath = text.trim()
+                const parts = text.trim().split("\t")
+                const changed = parts[0] !== bar.barPath || (parts.length > 1) !== bar.wantsPal
+                bar.wantsPal = parts.length > 1
+                bar.barPath = parts[0]
                 bar.checked = true
+                if (changed) bar.remount()
             }
         }
     }
@@ -54,7 +61,8 @@ PanelWindow {
     // (the one-behind bug). Reading themeDir at start time always sees the new value.
     function rescan() {
         existProc.command = ["bash", "-c",
-            'd="$1"; [ -n "$d" ] && [ -f "$d/bar.qml" ] && printf "%s/bar.qml" "$d"',
+            'd="$1"; f="$d/bar.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; ' +
+            'printf "%s" "$f"; grep -q "property var pal" "$f" && printf "\\tPAL"; true',
             "_", bar.themeDir]
         existProc.running = true
     }
@@ -64,18 +72,26 @@ PanelWindow {
     Loader {
         id: themeLoader
         anchors.fill: parent
-        active: bar.barPath !== ""
-        source: bar.barPath !== "" ? bar.fileUrl(bar.barPath) + "?v=" + bar.reloadNonce : ""
         onLoaded: if (item) item.barScreen = bar.screen
     }
+    // setSource instead of a source binding so the widget gets `pal` as an
+    // initial property — its bindings never see pal undefined. Called from the
+    // exist-check collector (path/pal answer changed) and on nonce bumps.
+    function remount() {
+        if (bar.barPath === "") { themeLoader.source = ""; return }
+        const url = bar.fileUrl(bar.barPath) + "?v=" + bar.reloadNonce
+        themeLoader.setSource(url, bar.wantsPal ? { pal: bar.pal } : {})
+    }
+    onReloadNonceChanged: remount()
 
     // Hot-reload: watch the loaded file ourselves (quickshell only watches its own
     // config tree, not the theme dirs) and bump the ?v= nonce on save to recompile.
+    // Rescan too, so adding/removing the widget's `pal` property takes on save.
     FileView {
         path: bar.barPath
         watchChanges: bar.barPath !== ""
         printErrors: false
-        onFileChanged: bar.reloadNonce++
+        onFileChanged: { bar.rescan(); bar.reloadNonce++ }
     }
 
     // default bar — once we know the theme ships no bar.qml

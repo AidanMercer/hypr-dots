@@ -28,7 +28,10 @@ PanelWindow {
 
     property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
     property string infoPath: ""
+    property bool wantsPal: false               // widget declares `property var pal`
     property int reloadNonce: 0
+
+    property ThemePalette pal: ThemePalette { themeDir: root.themeDir }
 
     function fileUrl(p) {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
@@ -40,7 +43,13 @@ PanelWindow {
     Process {
         id: existProc
         stdout: StdioCollector {
-            onStreamFinished: root.infoPath = text.trim()
+            onStreamFinished: {
+                const parts = text.trim().split("\t")
+                const changed = parts[0] !== root.infoPath || (parts.length > 1) !== root.wantsPal
+                root.wantsPal = parts.length > 1
+                root.infoPath = parts[0]
+                if (changed) root.remount()
+            }
         }
     }
     // Build the lookup command from the CURRENT themeDir at call time, NOT via a
@@ -50,25 +59,35 @@ PanelWindow {
     // (the one-behind bug). Reading themeDir at start time always sees the new value.
     function rescan() {
         existProc.command = ["bash", "-c",
-            'd="$1"; [ -n "$d" ] && [ -f "$d/sysinfo.qml" ] && printf "%s/sysinfo.qml" "$d"',
+            'd="$1"; f="$d/sysinfo.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; ' +
+            'printf "%s" "$f"; grep -q "property var pal" "$f" && printf "\\tPAL"; true',
             "_", root.themeDir]
         existProc.running = true
     }
     onThemeDirChanged: rescan()
 
     Loader {
+        id: widgetLoader
         anchors.fill: parent
-        active: root.infoPath !== ""
-        source: root.infoPath !== "" ? root.fileUrl(root.infoPath) + "?v=" + root.reloadNonce : ""
     }
+    // setSource instead of a source binding so the widget gets `pal` as an
+    // initial property — its bindings never see pal undefined. Called from the
+    // exist-check collector (path/pal answer changed) and on nonce bumps.
+    function remount() {
+        if (root.infoPath === "") { widgetLoader.source = ""; return }
+        const url = root.fileUrl(root.infoPath) + "?v=" + root.reloadNonce
+        widgetLoader.setSource(url, root.wantsPal ? { pal: root.pal } : {})
+    }
+    onReloadNonceChanged: remount()
 
     // Hot-reload: watch the loaded file ourselves (quickshell only watches its own
     // config tree, not the theme dirs) and bump the ?v= nonce on save to recompile.
+    // Rescan too, so adding/removing the widget's `pal` property takes on save.
     FileView {
         path: root.infoPath
         watchChanges: root.infoPath !== ""
         printErrors: false
-        onFileChanged: root.reloadNonce++
+        onFileChanged: { root.rescan(); root.reloadNonce++ }
     }
 
     Component.onCompleted: rescan()

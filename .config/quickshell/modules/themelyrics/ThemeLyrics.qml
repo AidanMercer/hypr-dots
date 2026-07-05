@@ -30,7 +30,10 @@ PanelWindow {
 
     property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
     property string lyricsPath: ""
+    property bool wantsPal: false               // widget declares `property var pal`
     property int reloadNonce: 0
+
+    property ThemePalette pal: ThemePalette { themeDir: root.themeDir }
 
     // Only ONE instance (the primary screen) should run singletons like the cava
     // silence-detector; the renderer/clock are fine per-screen. lyrics.qml defaults
@@ -48,7 +51,13 @@ PanelWindow {
     Process {
         id: existProc
         stdout: StdioCollector {
-            onStreamFinished: root.lyricsPath = text.trim()
+            onStreamFinished: {
+                const parts = text.trim().split("\t")
+                const changed = parts[0] !== root.lyricsPath || (parts.length > 1) !== root.wantsPal
+                root.wantsPal = parts.length > 1
+                root.lyricsPath = parts[0]
+                if (changed) root.remount()
+            }
         }
     }
     // Build the lookup command from the CURRENT themeDir at call time, NOT via a
@@ -58,7 +67,8 @@ PanelWindow {
     // (the one-behind bug). Reading themeDir at start time always sees the new value.
     function rescan() {
         existProc.command = ["bash", "-c",
-            'd="$1"; [ -n "$d" ] && [ -f "$d/lyrics.qml" ] && printf "%s/lyrics.qml" "$d"',
+            'd="$1"; f="$d/lyrics.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; ' +
+            'printf "%s" "$f"; grep -q "property var pal" "$f" && printf "\\tPAL"; true',
             "_", root.themeDir]
         existProc.running = true
     }
@@ -67,18 +77,26 @@ PanelWindow {
     Loader {
         id: lyricsLoader
         anchors.fill: parent
-        active: root.lyricsPath !== ""
-        source: root.lyricsPath !== "" ? root.fileUrl(root.lyricsPath) + "?v=" + root.reloadNonce : ""
         onLoaded: if (item && item.hasOwnProperty("isPrimary")) item.isPrimary = root.isPrimary
     }
+    // setSource instead of a source binding so the widget gets `pal` as an
+    // initial property — its bindings never see pal undefined. Called from the
+    // exist-check collector (path/pal answer changed) and on nonce bumps.
+    function remount() {
+        if (root.lyricsPath === "") { lyricsLoader.source = ""; return }
+        const url = root.fileUrl(root.lyricsPath) + "?v=" + root.reloadNonce
+        lyricsLoader.setSource(url, root.wantsPal ? { pal: root.pal } : {})
+    }
+    onReloadNonceChanged: remount()
 
     // Hot-reload: watch the loaded file ourselves (quickshell only watches its own
     // config tree, not the theme dirs) and bump the ?v= nonce on save to recompile.
+    // Rescan too, so adding/removing the widget's `pal` property takes on save.
     FileView {
         path: root.lyricsPath
         watchChanges: root.lyricsPath !== ""
         printErrors: false
-        onFileChanged: root.reloadNonce++
+        onFileChanged: { root.rescan(); root.reloadNonce++ }
     }
     // keep it correct if the screen list reorders after load
     onIsPrimaryChanged: if (lyricsLoader.item && lyricsLoader.item.hasOwnProperty("isPrimary"))
