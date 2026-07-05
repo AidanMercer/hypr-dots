@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Services.Notifications
@@ -9,7 +10,9 @@ import "../common"
 // notification; we set tracked=true to keep it alive, push it onto our own list
 // (newest on top, capped), and each card auto-dismisses on a timer unless it's
 // Critical or being hovered. Popups stack top-right on the focused monitor, below
-// the bar. Glass by default, neon chamfer on cyber themes.
+// the bar. Glass by default, neon chamfer on cyber themes — or the active theme's
+// own card chrome when it ships a notif.qml (cardBg/cardBorder/cardRadius +
+// optional per-card backdrop Component, same slot grammar as popup.qml).
 Scope {
     id: scope
 
@@ -65,6 +68,53 @@ Scope {
         implicitWidth: 360
         implicitHeight: Math.max(1, col.implicitHeight)
 
+        // ── theme chrome: the theme's notif.qml when it ships one ──
+        property string themeDir: ActiveTheme.dirFor(win.screen ? win.screen.name : "")
+        property string chromePath: ""
+        property int chromeNonce: 0
+        readonly property var chrome: chromeLoader.item
+        property ThemePalette pal: ThemePalette { themeDir: win.themeDir }
+
+        function fileUrl(p) {
+            return "file://" + p.split("/").map(encodeURIComponent).join("/")
+        }
+        Process {
+            id: chromeProc
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    const p = text.trim()
+                    if (p !== win.chromePath) { win.chromePath = p; win.remountChrome() }
+                }
+            }
+        }
+        // command built at call time, not bound — the one-behind trap again
+        function rescanChrome() {
+            chromeProc.command = ["bash", "-c",
+                'd="$1"; f="$d/notif.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; printf "%s" "$f"',
+                "_", win.themeDir]
+            chromeProc.running = true
+        }
+        onThemeDirChanged: rescanChrome()
+        function remountChrome() {
+            if (win.chromePath === "") { chromeLoader.source = ""; return }
+            chromeLoader.setSource(win.fileUrl(win.chromePath) + "?v=" + win.chromeNonce,
+                                   { pal: win.pal })
+        }
+        onChromeNonceChanged: remountChrome()
+        // non-visual provider object; the cards mount its backdrop themselves
+        Loader { id: chromeLoader }
+        FileView {
+            path: win.chromePath
+            watchChanges: win.chromePath !== ""
+            printErrors: false
+            onFileChanged: win.chromeNonce++
+        }
+        Connections {
+            target: ControlBus
+            function onThemeReloadRequested() { win.chromeNonce++; win.rescanChrome() }
+        }
+        Component.onCompleted: rescanChrome()
+
         Column {
             id: col
             anchors.right: parent.right
@@ -77,18 +127,22 @@ Scope {
                 delegate: Rectangle {
                     id: card
                     required property var modelData
+                    readonly property var chrome: win.chrome
                     readonly property int urgency: modelData.urgency
+                    readonly property bool hovered: cardHover.containsMouse
                     readonly property color accentCol:
                         urgency === NotificationUrgency.Critical ? Theme.danger
                         : urgency === NotificationUrgency.Low ? Theme.textMuted
                         : Theme.accent
 
                     width: parent.width
-                    radius: Theme.cyber ? 3 : 14
-                    color: Theme.cyber ? Qt.rgba(0.04, 0.04, 0.07, 0.96)
+                    radius: chrome ? chrome.cardRadius : (Theme.cyber ? 3 : 14)
+                    color: chrome ? chrome.cardBg
+                         : Theme.cyber ? Qt.rgba(0.04, 0.04, 0.07, 0.96)
                                        : Qt.rgba(ThemeConfig.glass.r, ThemeConfig.glass.g, ThemeConfig.glass.b, 0.94)
-                    border.width: 1
-                    border.color: Theme.cyber ? Theme.neon : Theme.glassBorder
+                    border.width: chrome ? chrome.cardBorderWidth : 1
+                    border.color: chrome ? chrome.cardBorder
+                                : Theme.cyber ? Theme.neon : Theme.glassBorder
                     implicitHeight: layout.implicitHeight + 24
 
                     // entrance: fade + slide in from the right
@@ -101,8 +155,19 @@ Scope {
                         NumberAnimation { target: slide; property: "x"; from: 24; to: 0; duration: 220; easing.type: Easing.OutCubic }
                     }
 
-                    // urgency stripe down the left edge
+                    // theme chassis behind the content (chrome.backdrop); its root
+                    // gets this card injected as `note` (urgency/accentCol/hovered)
+                    Loader {
+                        id: cardBackdrop
+                        anchors.fill: parent
+                        active: !!(card.chrome && card.chrome.backdrop)
+                        sourceComponent: active ? card.chrome.backdrop : undefined
+                        onLoaded: if (item && item.hasOwnProperty("note")) item.note = card
+                    }
+
+                    // urgency stripe down the left edge — unless the theme opts out
                     Rectangle {
+                        visible: !(card.chrome && card.chrome.cardSpine === false)
                         anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
                         width: 3
                         radius: parent.radius
