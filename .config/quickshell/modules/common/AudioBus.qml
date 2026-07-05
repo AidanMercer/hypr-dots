@@ -111,7 +111,10 @@ QtObject {
     property Timer _cavaRestart: Timer {
         id: cavaRestart
         interval: 2000
-        onTriggered: if (bus.playing) cavaProc.running = true
+        // re-assign the BINDING, never `running = true`: an imperative write
+        // would strip the playing gate off this singleton, so one cava crash
+        // mid-playback would leak the reader forever after the music stops
+        onTriggered: cavaProc.running = Qt.binding(() => bus.playing)
     }
 
     // write-only mirror. non-atomic so the inode stays put and watchers' inotify
