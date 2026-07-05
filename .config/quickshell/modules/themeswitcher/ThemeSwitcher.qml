@@ -352,7 +352,9 @@ PanelWindow {
                         // re-samples it through the shear every frame → stutter.
                         sourceSize: Qt.size(root.imgW, root.imgH)
                         asynchronous: true
-                        cache: true
+                        // no cache: video themes regenerate still.png under the
+                        // same path, and the cached old frame would stick forever
+                        cache: false
                         smooth: true
                         transform: Matrix4x4 {
                             // Opposite shear about the image centre → cancels
