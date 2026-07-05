@@ -11,13 +11,13 @@ import "../common"
 // monitor; clicking the surrounding scrim dismisses it.
 //
 // It owns its own uptime + network polling (so it doesn't depend on the bar's
-// StatusButton) and switches to a full cyberpunk HUD — chamfered Canvas frame,
-// neon stroke + cyan rule + magenta corner tick, CRT scanlines, blink pip, mono
-// labels, a sliding tab underline and an EDGERUNNER sign-off — when the active
-// theme sets `cyber = true` in its config.toml. The reused tabs come along for
-// free: Theme.qml retints its shared accent colors to the neon palette when
-// cyber is on, so sliders/rings/rows go neon without per-tab edits. Everything
-// here is gated on `cyber`, so glass themes render byte-for-byte as before.
+// StatusButton). The active theme can ship a popup.qml next to its wallpaper to
+// replace the card's chrome — an invisible Item declaring `pal`/`popup`/`audio`
+// (all injected) plus cardBg/cardBorder/cardBorderWidth/cardRadius and optional
+// backdrop/header/footer/overlay Components, mounted around the shared tabs.
+// No popup.qml → the glass card. `cyber = true` in config.toml still tints the
+// tab bar + shared controls (Theme.qml retints its accent colors), so a HUD
+// theme gets neon sliders/rings/rows without per-tab edits.
 //
 // We use a scrim rather than HyprlandFocusGrab because the grab races the popup's
 // mapping and often fails to attach. The Launcher uses this same scrim pattern.
@@ -30,19 +30,63 @@ PanelWindow {
     readonly property bool open: monitorName !== "" && ControlBus.openMonitor === monitorName
     property int currentTab: 0  // 0 = network, 1 = sound, 2 = bluetooth, 3 = power, 4 = display
 
-    // ── theme chrome: cyberpunk when the theme opts in, glass otherwise ──
+    // ── theme chrome: the theme's popup.qml when it ships one, glass otherwise ──
     readonly property bool cyber: ThemeConfig.cyber
-    readonly property color accentCol: ThemeConfig.accent      // neon yellow
-    readonly property color cyanCol: ThemeConfig.accent2       // secondary cyan
-    readonly property color magentaCol: ThemeConfig.accent3    // alert magenta
+    readonly property color accentCol: ThemeConfig.accent      // primary accent
+    readonly property color cyanCol: ThemeConfig.accent2       // secondary
+    readonly property color magentaCol: ThemeConfig.accent3    // alert
     readonly property color amberCol: ThemeConfig.accentWarn   // amber
     readonly property color dimCol: ThemeConfig.accentDim      // muted trace
-    readonly property color cardBg: cyber ? Qt.rgba(0.03, 0.03, 0.045, 0.93) : Theme.glassBg
-    readonly property color cardBorder: cyber ? accentCol : Theme.glassBorder
-    readonly property int cardRadius: cyber ? 5 : Theme.popupRadius
-    // optional roaming scan beam — off by default (a transient popup shouldn't
-    // sweep while you're aiming at a slider); flip to true to opt in.
-    property bool scanBeam: false
+
+    property string themeDir: ActiveTheme.dirFor(root.monitorName)
+    property string chromePath: ""
+    property int chromeNonce: 0
+    property ThemePalette pal: ThemePalette { themeDir: root.themeDir }
+    readonly property var chrome: chromeLoader.item
+
+    readonly property color cardBg: chrome ? chrome.cardBg : Theme.glassBg
+    readonly property color cardBorder: chrome ? chrome.cardBorder : Theme.glassBorder
+    readonly property int cardRadius: chrome ? chrome.cardRadius : Theme.popupRadius
+
+    function fileUrl(p) {
+        return "file://" + p.split("/").map(encodeURIComponent).join("/")
+    }
+    Process {
+        id: chromeProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const p = text.trim()
+                if (p !== root.chromePath) { root.chromePath = p; root.remountChrome() }
+            }
+        }
+    }
+    // command built at call time, not bound — the one-behind trap again
+    function rescanChrome() {
+        chromeProc.command = ["bash", "-c",
+            'd="$1"; f="$d/popup.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; printf "%s" "$f"',
+            "_", root.themeDir]
+        chromeProc.running = true
+    }
+    onThemeDirChanged: rescanChrome()
+    function remountChrome() {
+        if (root.chromePath === "") { chromeLoader.source = ""; return }
+        chromeLoader.setSource(root.fileUrl(root.chromePath) + "?v=" + root.chromeNonce,
+                               { pal: root.pal, popup: root, audio: AudioBus })
+    }
+    onChromeNonceChanged: remountChrome()
+    // non-visual provider object; the card mounts its Components in the slots below
+    Loader { id: chromeLoader }
+    FileView {
+        path: root.chromePath
+        watchChanges: root.chromePath !== ""
+        printErrors: false
+        onFileChanged: root.chromeNonce++
+    }
+    Connections {
+        target: ControlBus
+        function onThemeReloadRequested() { root.chromeNonce++; root.rescanChrome() }
+    }
+    Component.onCompleted: rescanChrome()
 
     onOpenChanged: if (open) { resetNav(); Qt.callLater(card.forceActiveFocus) }
 
@@ -197,10 +241,10 @@ PanelWindow {
             id: card
             width: 432
             height: content.implicitHeight + 32
-            radius: root.cyber ? 0 : root.cardRadius
-            color: root.cyber ? "transparent" : root.cardBg
+            radius: root.cardRadius
+            color: root.cardBg
             border.color: root.cardBorder
-            border.width: root.cyber ? 0 : 1
+            border.width: root.chrome ? root.chrome.cardBorderWidth : 1
             focus: true
 
             Keys.onPressed: (e) => {
@@ -225,89 +269,17 @@ PanelWindow {
 
             MouseArea { anchors.fill: parent }
 
-            // ── cyber chassis: chamfered Canvas frame drawn behind the content.
-            // Top-left + bottom-right corner cuts, a faint wide glow stroke under a
-            // crisp neon edge, a cyan inner rule along the top and a magenta corner
-            // tick bottom-right — sysinfo.qml's HUD grammar. Canvas doesn't repaint
-            // on resize and the card grows per tab, so we requestPaint() on size. ──
-            Canvas {
-                id: frameCanvas
+            // ── theme chassis behind the content (chrome.backdrop) ──
+            Loader {
+                id: backdropSlot
                 anchors.fill: parent
-                visible: root.cyber
-                // card resizes per tab; repaint the chamfer to fit (cyber only —
-                // no point rastering this hidden surface on glass themes)
-                onWidthChanged: if (root.cyber) requestPaint()
-                onHeightChanged: if (root.cyber) requestPaint()
-                Component.onCompleted: if (root.cyber) requestPaint()
-                Connections { target: root; function onCyberChanged() { frameCanvas.requestPaint() } }
-                onPaint: {
-                    const ctx = getContext("2d")
-                    const w = width, h = height, c = 13
-                    ctx.reset()
-                    ctx.beginPath()
-                    ctx.moveTo(c, 0); ctx.lineTo(w, 0); ctx.lineTo(w, h - c)
-                    ctx.lineTo(w - c, h); ctx.lineTo(0, h); ctx.lineTo(0, c)
-                    ctx.closePath()
-                    ctx.fillStyle = "rgba(7,7,12,0.95)"
-                    ctx.fill()
-                    // fake glow: wide low-alpha stroke first, crisp edge on top
-                    ctx.strokeStyle = root.accentCol
-                    ctx.lineWidth = 3
-                    ctx.globalAlpha = 0.18
-                    ctx.stroke()
-                    ctx.globalAlpha = 1
-                    ctx.lineWidth = 1.4
-                    ctx.stroke()
-                    // cyan inner rule under the top edge
-                    ctx.beginPath()
-                    ctx.moveTo(14, 4); ctx.lineTo(w - 6, 4)
-                    ctx.strokeStyle = root.cyanCol
-                    ctx.lineWidth = 1
-                    ctx.globalAlpha = 0.5
-                    ctx.stroke()
-                    ctx.globalAlpha = 1
-                    // magenta corner tick, bottom-right
-                    ctx.beginPath()
-                    ctx.moveTo(w - 4, h - 22); ctx.lineTo(w - 4, h - 6); ctx.lineTo(w - 20, h - 6)
-                    ctx.strokeStyle = root.magentaCol
-                    ctx.lineWidth = 1.6
-                    ctx.stroke()
-                }
+                active: !!(root.chrome && root.chrome.backdrop)
+                sourceComponent: backdropSlot.active ? root.chrome.backdrop : undefined
             }
 
-            // cyan L-brackets on the two square corners (top-right, bottom-left) —
-            // the chamfered corners carry the diagonal cut, these "lock" the others.
-            Repeater {
-                model: [
-                    { ax: "right", ay: "top" },
-                    { ax: "left",  ay: "bottom" }
-                ]
-                delegate: Item {
-                    required property var modelData
-                    visible: root.cyber
-                    width: 16
-                    height: 16
-                    x: modelData.ax === "left" ? 0 : card.width - width
-                    y: modelData.ay === "top" ? 0 : card.height - height
-
-                    Rectangle {
-                        width: parent.width
-                        height: 2
-                        color: root.cyanCol
-                        y: parent.modelData.ay === "top" ? 0 : parent.height - height
-                    }
-                    Rectangle {
-                        width: 2
-                        height: parent.height
-                        color: root.cyanCol
-                        x: parent.modelData.ax === "left" ? 0 : parent.width - width
-                    }
-                }
-            }
-
-            // top highlight (glass only — the cyber cyan rule is drawn in frameCanvas)
+            // top highlight (glass only — a theme backdrop draws its own edges)
             Rectangle {
-                visible: !root.cyber
+                visible: !backdropSlot.active
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
@@ -324,9 +296,16 @@ PanelWindow {
                 anchors.margins: 16
                 spacing: 14
 
-                // ── header (glass): Arch glyph + uptime ──
+                // ── header: the theme's (chrome.header), else Arch glyph + uptime ──
+                Loader {
+                    id: headerSlot
+                    width: parent.width
+                    active: !!(root.chrome && root.chrome.header)
+                    visible: active
+                    sourceComponent: headerSlot.active ? root.chrome.header : undefined
+                }
                 Row {
-                    visible: !root.cyber
+                    visible: !headerSlot.active
                     width: parent.width
                     spacing: 8
 
@@ -345,107 +324,6 @@ PanelWindow {
                         font.pixelSize: 12
                         font.family: Theme.mono
                     }
-                }
-
-                // ── header (cyber): blink pip + SYSTEM // CTRL.DECK + UP uptime ──
-                Item {
-                    visible: root.cyber
-                    width: parent.width
-                    height: 16
-
-                    Row {
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 6
-
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 6; height: 6; radius: 1
-                            color: root.magentaCol
-                            SequentialAnimation on opacity {
-                                running: root.cyber && root.open
-                                loops: Animation.Infinite
-                                NumberAnimation { to: 0.25; duration: 700 }
-                                NumberAnimation { to: 1.0; duration: 700 }
-                            }
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: root.iconArch
-                            font.family: Theme.icon
-                            font.pixelSize: 13
-                            color: root.cyanCol
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "SYSTEM"
-                            font.family: Theme.mono
-                            font.weight: Font.Bold
-                            font.pixelSize: 13
-                            font.letterSpacing: 4
-                            color: root.accentCol
-                        }
-
-                        // live audio EQ — bass/mid/high straight off AudioBus. dances
-                        // while anything's playing, drops flat + dim when it goes quiet.
-                        Item {
-                            id: eq
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 13; height: 12
-                            opacity: (AudioBus.ready && !AudioBus.silent) ? 1 : 0.25
-                            Behavior on opacity { NumberAnimation { duration: 220 } }
-
-                            Repeater {
-                                model: [
-                                    { px: 0,  band: "bass", col: root.magentaCol },
-                                    { px: 5,  band: "mid",  col: root.accentCol },
-                                    { px: 10, band: "high", col: root.cyanCol }
-                                ]
-                                delegate: Rectangle {
-                                    required property var modelData
-                                    x: modelData.px
-                                    width: 3
-                                    anchors.bottom: parent.bottom
-                                    color: modelData.col
-                                    height: 2 + 10 * Math.min(1, AudioBus[modelData.band] || 0)
-                                    Behavior on height { NumberAnimation { duration: 80 } }
-                                }
-                            }
-                        }
-                    }
-
-                    Row {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "// CTRL.DECK"
-                            font.family: Theme.mono
-                            font.pixelSize: 9
-                            font.letterSpacing: 2
-                            color: root.cyanCol
-                            opacity: 0.7
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "UP " + root.uptimeText.replace("up ", "").toUpperCase()
-                            font.family: Theme.mono
-                            font.pixelSize: 10
-                            font.letterSpacing: 1
-                            color: root.dimCol
-                        }
-                    }
-                }
-
-                // header divider (cyber only)
-                Rectangle {
-                    visible: root.cyber
-                    width: parent.width
-                    height: 1
-                    color: root.dimCol
-                    opacity: 0.5
                 }
 
                 // ── segmented tab bar (+ sliding cyber underline) ──
@@ -570,110 +448,23 @@ PanelWindow {
                     active: root.open && root.currentTab === 4
                 }
 
-                // ── cyber footer: NET status (left) + EDGERUNNER sign-off (right) ──
-                Rectangle {
-                    visible: root.cyber
+                // ── footer: theme-only (chrome.footer); glass has none ──
+                Loader {
+                    id: footerSlot
                     width: parent.width
-                    height: 1
-                    color: root.dimCol
-                    opacity: 0.5
-                }
-                Item {
-                    visible: root.cyber
-                    width: parent.width
-                    height: 13
-
-                    Row {
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 5
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: String.fromCodePoint(root.connType === "ethernet" ? 0xF059F
-                                : root.connType === "wifi" ? 0xF05A9 : 0xF092F)
-                            font.family: Theme.icon
-                            font.pixelSize: 11
-                            color: root.connType === "none" ? root.magentaCol : root.cyanCol
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: root.connType === "none" ? "OFFLINE" : (root.connName || "ONLINE")
-                            font.family: Theme.mono
-                            font.pixelSize: 9
-                            color: root.connType === "none" ? root.magentaCol : root.cyanCol
-                        }
-                    }
-
-                    Row {
-                        anchors.right: parent.right
-                        // clear the bottom-right chamfer + magenta corner tick (~20px in)
-                        anchors.rightMargin: 16
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 6
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "// EDGERUNNER CTRL"
-                            font.family: Theme.mono
-                            font.pixelSize: 8
-                            font.letterSpacing: 2
-                            color: root.accentCol
-                            opacity: 0.55
-                        }
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 7; height: 11
-                            color: root.accentCol
-                            SequentialAnimation on opacity {
-                                running: root.cyber && root.open
-                                loops: Animation.Infinite
-                                NumberAnimation { to: 0; duration: 0 }
-                                PauseAnimation { duration: 440 }
-                                NumberAnimation { to: 1; duration: 0 }
-                                PauseAnimation { duration: 440 }
-                            }
-                        }
-                    }
+                    active: !!(root.chrome && root.chrome.footer)
+                    visible: active
+                    sourceComponent: footerSlot.active ? root.chrome.footer : undefined
                 }
             }
 
-            // faint CRT scanlines over the whole card (cyber only). No MouseArea,
-            // so clicks/scrolls pass straight through to the tabs below.
-            Canvas {
-                id: scanCanvas
+            // ── theme overlay above the content (chrome.overlay — scanlines etc).
+            // Must not carry a MouseArea, so clicks pass through to the tabs. ──
+            Loader {
+                id: overlaySlot
                 anchors.fill: parent
-                visible: root.cyber
-                opacity: 0.4
-                onWidthChanged: if (root.cyber) requestPaint()
-                onHeightChanged: if (root.cyber) requestPaint()
-                Component.onCompleted: if (root.cyber) requestPaint()
-                Connections { target: root; function onCyberChanged() { scanCanvas.requestPaint() } }
-                onPaint: {
-                    const ctx = getContext("2d")
-                    ctx.reset()
-                    ctx.strokeStyle = "rgba(0,0,0,0.5)"
-                    ctx.lineWidth = 1
-                    for (let y = 3; y < height; y += 3) {
-                        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke()
-                    }
-                }
-            }
-
-            // optional roaming scan beam — opt-in via root.scanBeam (default off)
-            Rectangle {
-                visible: root.cyber && root.scanBeam
-                width: card.width
-                height: 2
-                color: root.cyanCol
-                opacity: 0.25
-                SequentialAnimation on y {
-                    running: root.cyber && root.open && root.scanBeam
-                    loops: Animation.Infinite
-                    NumberAnimation { to: card.height; duration: 4200; easing.type: Easing.InOutSine }
-                    NumberAnimation { to: 0; duration: 0 }
-                    PauseAnimation { duration: 1600 }
-                }
+                active: !!(root.chrome && root.chrome.overlay)
+                sourceComponent: overlaySlot.active ? root.chrome.overlay : undefined
             }
         }
     }
