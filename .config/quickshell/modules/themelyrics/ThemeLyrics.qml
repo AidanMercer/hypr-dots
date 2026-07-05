@@ -13,6 +13,12 @@ import "../common"
 // renders. Swap the wallpaper and it swaps too — so to give a future theme
 // lyrics you just drop a lyrics.qml in its folder, nothing here changes.
 //
+// The heavy lifting (MPRIS clock, fetch, word timing, silence detection) lives
+// in LyricsEngine — one per window, injected into the theme widget as `engine`
+// when the file declares `property var engine` (same grep handshake as `pal`),
+// and only running while such a widget is loaded. Theme lyrics.qml files are
+// styling only; a fully self-contained widget that declares neither still works.
+//
 // Bottom layer (above wallpaper, below windows), fully click-through scenery.
 PanelWindow {
     id: root
@@ -31,6 +37,7 @@ PanelWindow {
     property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
     property string lyricsPath: ""
     property bool wantsPal: false               // widget declares `property var pal`
+    property bool wantsEngine: false            // widget declares `property var engine`
     property int reloadNonce: 0
 
     property ThemePalette pal: ThemePalette { themeDir: root.themeDir }
@@ -40,6 +47,13 @@ PanelWindow {
     // isPrimary=false and we forward the real value onto it once it loads.
     readonly property bool isPrimary:
         Quickshell.screens.length > 0 && root.modelData === Quickshell.screens[0]
+
+    // the engine only spends cycles (timers, cava, fetches) while a widget that
+    // wants it is actually loaded; a theme without lyrics costs nothing
+    property LyricsEngine engine: LyricsEngine {
+        isPrimary: root.isPrimary
+        active: root.lyricsPath !== "" && root.wantsEngine
+    }
 
     function fileUrl(p) {
         return "file://" + p.split("/").map(encodeURIComponent).join("/")
@@ -53,8 +67,12 @@ PanelWindow {
         stdout: StdioCollector {
             onStreamFinished: {
                 const parts = text.trim().split("\t")
-                const changed = parts[0] !== root.lyricsPath || (parts.length > 1) !== root.wantsPal
-                root.wantsPal = parts.length > 1
+                const pal = parts.indexOf("PAL") > 0
+                const eng = parts.indexOf("ENGINE") > 0
+                const changed = parts[0] !== root.lyricsPath
+                    || pal !== root.wantsPal || eng !== root.wantsEngine
+                root.wantsPal = pal
+                root.wantsEngine = eng
                 root.lyricsPath = parts[0]
                 if (changed) root.remount()
             }
@@ -68,7 +86,8 @@ PanelWindow {
     function rescan() {
         existProc.command = ["bash", "-c",
             'd="$1"; f="$d/lyrics.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; ' +
-            'printf "%s" "$f"; grep -q "property var pal" "$f" && printf "\\tPAL"; true',
+            'printf "%s" "$f"; grep -q "property var pal" "$f" && printf "\\tPAL"; ' +
+            'grep -q "property var engine" "$f" && printf "\\tENGINE"; true',
             "_", root.themeDir]
         existProc.running = true
     }
@@ -79,13 +98,17 @@ PanelWindow {
         anchors.fill: parent
         onLoaded: if (item && item.hasOwnProperty("isPrimary")) item.isPrimary = root.isPrimary
     }
-    // setSource instead of a source binding so the widget gets `pal` as an
-    // initial property — its bindings never see pal undefined. Called from the
-    // exist-check collector (path/pal answer changed) and on nonce bumps.
+    // setSource instead of a source binding so the widget gets `pal`/`engine` as
+    // initial properties — its bindings never see them undefined. Called from the
+    // exist-check collector (path/flags answer changed) and on nonce bumps.
     function remount() {
         if (root.lyricsPath === "") { lyricsLoader.source = ""; return }
+        engine.resetTuning()   // one theme's pacing tweak can't leak into the next
         const url = root.fileUrl(root.lyricsPath) + "?v=" + root.reloadNonce
-        lyricsLoader.setSource(url, root.wantsPal ? { pal: root.pal } : {})
+        let props = {}
+        if (root.wantsPal) props.pal = root.pal
+        if (root.wantsEngine) props.engine = root.engine
+        lyricsLoader.setSource(url, props)
     }
     onReloadNonceChanged: remount()
 
