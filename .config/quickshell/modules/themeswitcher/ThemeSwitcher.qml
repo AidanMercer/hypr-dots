@@ -467,7 +467,7 @@ PanelWindow {
                                 sourceSize: Qt.size(root.imgW, root.imgH)
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
-                                cache: true
+                                cache: false   // regenerated stills must not show stale frames
                             }
                             Rectangle {
                                 anchors.fill: parent
@@ -600,7 +600,7 @@ PanelWindow {
                                 fillMode: Image.PreserveAspectCrop
                                 sourceSize: Qt.size(root.imgW, root.imgH)
                                 asynchronous: true
-                                cache: true
+                                cache: false   // regenerated stills must not show stale frames
                                 smooth: true
                             }
                             Image {
@@ -611,7 +611,7 @@ PanelWindow {
                                 fillMode: Image.PreserveAspectCrop
                                 sourceSize: Qt.size(root.imgW, root.imgH)
                                 asynchronous: true
-                                cache: true
+                                cache: false   // regenerated stills must not show stale frames
                                 smooth: true
                             }
 
