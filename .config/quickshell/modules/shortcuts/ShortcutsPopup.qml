@@ -7,8 +7,8 @@ import "../common"
 
 // Fullscreen, transparent layer-shell overlay holding a card with two tabs:
 //   • Shortcuts — a "cheat sheet" listing every keybind (hand-maintained).
-//   • Settings  — toggles for shell/system behaviour (currently: keep the
-//     laptop awake when the lid is shut, via a systemd-inhibit lock).
+//   • Settings  — toggles for shell/system behaviour (keep the laptop awake
+//     when the lid is shut, auto-lock on idle).
 // Centred on the focused monitor; click the scrim or press Esc to dismiss.
 // Same proven scrim pattern as the launcher / control popup (a
 // HyprlandFocusGrab races the map and often misses).
@@ -26,12 +26,18 @@ PanelWindow {
     property bool closing: false        // keep mapped through the close fade
     property int tab: 0                  // 0 = Shortcuts, 1 = Settings
     property int settingsRow: 0          // cursor within the Settings tab
-    readonly property int settingsCount: 1
+    readonly property int settingsCount: 2
 
     // ── keep-laptop-awake setting ──────────────────────────────────────
     // Holds a logind block-inhibitor on handle-lid-switch while on, so
     // closing the lid does nothing. Persisted across shell restarts.
     property bool keepAwake: false
+
+    // ── auto-lock setting ───────────────────────────────────────────────
+    // The shell owns hypridle now (no exec-once in hyprland.conf): while on
+    // it runs as a child process and the 5 min lock in hypridle.conf applies;
+    // off means no idle daemon at all. Dies with the shell, comes back with it.
+    property bool autoLock: false
 
     // Captured at open() time so follow_mouse can't remap the window mid-use.
     property var targetScreen: null
@@ -123,7 +129,23 @@ PanelWindow {
         stateFile.setText(v ? "1\n" : "0\n")
     }
 
-    Component.onCompleted: root.keepAwake = stateFile.text().trim() === "1"
+    FileView {
+        id: autoLockFile
+        path: Quickshell.stateDir + "/auto-lock"
+        blockLoading: true
+        preload: true
+        printErrors: false
+    }
+
+    function setAutoLock(v) {
+        root.autoLock = v
+        autoLockFile.setText(v ? "1\n" : "0\n")
+    }
+
+    Component.onCompleted: {
+        root.keepAwake = stateFile.text().trim() === "1"
+        root.autoLock = autoLockFile.text().trim() === "1"
+    }
 
     // While running, logind ignores the lid switch. Killed on shell exit, which
     // releases the lock — Component.onCompleted re-arms it on next start.
@@ -136,6 +158,12 @@ PanelWindow {
                   "--why=Keep laptop awake when the lid is shut",
                   "--mode=block",
                   "sleep", "infinity"]
+    }
+
+    Process {
+        id: idleDaemon
+        running: root.autoLock
+        command: ["hypridle"]
     }
 
     // ── lifecycle ───────────────────────────────────────────────────────
@@ -163,6 +191,8 @@ PanelWindow {
             if (root.open && root.tab === 1) root.closeMenu()
             else root.openMenu(1)
         }
+        // flip auto-lock without opening the sheet (scripts / future keybind)
+        function autolock(): void { root.setAutoLock(!root.autoLock) }
     }
 
     // ── scrim: transparent (no dimming), click-outside to dismiss ───────
@@ -233,6 +263,7 @@ PanelWindow {
                     }
                     if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
                         if (root.settingsRow === 0) root.setKeepAwake(!root.keepAwake)
+                        else if (root.settingsRow === 1) root.setAutoLock(!root.autoLock)
                         e.accepted = true; return
                     }
                     e.accepted = true   // swallow stray keys instead of closing
@@ -505,6 +536,72 @@ PanelWindow {
                                 color: root.keepAwake ? Theme.textBright : Theme.textMuted
                                 anchors.verticalCenter: parent.verticalCenter
                                 x: root.keepAwake ? parent.width - width - 3 : 3
+                                Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                Behavior on color { ColorAnimation { duration: 140 } }
+                            }
+                        }
+                    }
+
+                    // row 1 — auto-lock on idle
+                    Rectangle {
+                        width: parent.width
+                        height: 56
+                        radius: 10
+                        color: root.settingsRow === 1 ? Theme.rowSelected
+                                                      : (lockHover.hovered ? Theme.rowHover : "transparent")
+                        border.color: root.settingsRow === 1 ? Theme.glassBorder : "transparent"
+                        border.width: 1
+
+                        HoverHandler { id: lockHover }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { root.settingsRow = 1; root.setAutoLock(!root.autoLock) }
+                        }
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 16
+                            anchors.right: lockToggle.left
+                            anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 3
+
+                            Text {
+                                text: "Auto-lock when idle"
+                                color: Theme.textBright
+                                font.pixelSize: 14
+                                font.weight: Font.DemiBold
+                            }
+                            Text {
+                                width: parent.width
+                                text: "Lock the screen after 5 minutes of inactivity."
+                                color: Theme.textMuted
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        Rectangle {
+                            id: lockToggle
+                            anchors.right: parent.right
+                            anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 44
+                            height: 24
+                            radius: 12
+                            color: root.autoLock ? Theme.accent : Theme.trackBg
+                            border.color: root.autoLock ? Theme.accent : Theme.glassBorder
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 140 } }
+
+                            Rectangle {
+                                width: 18
+                                height: 18
+                                radius: 9
+                                color: root.autoLock ? Theme.textBright : Theme.textMuted
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: root.autoLock ? parent.width - width - 3 : 3
                                 Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                                 Behavior on color { ColorAnimation { duration: 140 } }
                             }
