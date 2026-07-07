@@ -83,7 +83,10 @@ Item {
             id: bgVideo
             anchors.fill: parent
             fillMode: VideoOutput.PreserveAspectCrop
-            visible: root.videoWallpaper !== ""
+            // no visible: binding — a VideoOutput that's invisible at sink-attach
+            // time inside the hidden bgStack never delivers frames to the blur
+            // layer, even once the binding turns true (grey lock on video
+            // wallpapers). With no video it draws nothing anyway.
         }
     }
     MultiEffect {
