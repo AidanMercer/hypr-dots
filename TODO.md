@@ -20,7 +20,7 @@
 - [x] more custom wallpapers + push to github (10 themes, multi-wallpaper variants in the switcher)
 
 ## Slot parity (older themes missing newer slots)
-- [ ] moon: lock.qml + notif.qml (only theme left without a themed lock)
+- [x] moon: lock.qml + notif.qml (breach-deck bare lock, HUD notif cards)
 - [ ] shiro: popup.qml + sysinfo.qml
 - [ ] avalon: sysinfo.qml
 - [ ] lonely-train: sysinfo.qml
