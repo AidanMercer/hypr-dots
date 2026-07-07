@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import "../common"
 
 // Standalone, NON-locking preview of the lock UI. Run in isolation with:
 //   qs -p ~/dotfiles/.config/quickshell/modules/lock/PreviewLock.qml
@@ -13,14 +14,15 @@ ShellRoot {
         WlrLayershell.namespace: "quickshell-lockpreview"
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
-        color: "black"
+        color: ThemeConfig.glass
 
-        LockContent {
+        LockStage {
             id: content
             anchors.fill: parent
             screenName: ""
-            // no real auth in preview — Enter just clears the field
-            onSubmitted: content.resetNonce++
+            // no real auth in preview — Enter plays the unlock exit, then quits
+            onSubmitted: content.unlocking = true
+            onOutDone: Qt.quit()
         }
         MouseArea {
             anchors.fill: parent
