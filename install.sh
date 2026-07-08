@@ -37,6 +37,20 @@ ask()  { # ask "question" -> returns 0 for yes
   [ "$ASSUME_YES" = 1 ] && return 0
   read -rp "  $1 [y/N] " r; [[ "$r" == [yY]* ]]
 }
+choose() { # choose "prompt" "opt1" "opt2"... -> sets REPLY to the 1-based pick
+  local prompt="$1"; shift
+  printf "  %s\n" "$prompt"
+  local i=1; for o in "$@"; do printf "    %s%d)%s %s\n" "$c_hi" "$i" "$c_off" "$o"; i=$((i+1)); done
+  if [ "$ASSUME_YES" = 1 ]; then REPLY=1; printf "    -> 1 (--yes)\n"; return; fi
+  read -rp "  choice [1]: " REPLY; REPLY="${REPLY:-1}"
+}
+
+cat <<EOF
+
+${c_hi}hypr-dots installer${c_off}
+  Sets up: packages · config symlinks · per-machine files · themes · Frostify.
+  ${c_dim}Backs up anything it replaces and asks before each big step. Ctrl-C anytime.${c_off}
+EOF
 
 # ── preflight ────────────────────────────────────────────────────────────
 say "Preflight"
@@ -120,20 +134,50 @@ if [ ! -e "$loc" ]; then
   ok "wrote an empty local.conf (per-machine env goes here)"
 else skip "local.conf exists"; fi
 
-# ── themes dir + a starter so the desktop isn't blank ─────────────────────
+# ── themes: a plain dir the marketplace fills, plus an optional first batch ─
 say "Themes"
-mkdir -p "$HOME/.config/themes"; ok "~/.config/themes ready (marketplace fills it)"
-if [ "$DO_THEME" = 1 ] && [ ! -d "$HOME/.config/themes/$STARTER_THEME" ]; then
-  if ask "download the '$STARTER_THEME' starter theme now (~40MB)?"; then
-    idx="$(curl -fsSL "https://raw.githubusercontent.com/$THEMES_REPO/master/index.json")"
-    commit="$(jq -r '.commit' <<<"$idx")"
-    mapfile -t paths < <(jq -r ".themes[]|select(.name==\"$STARTER_THEME\")|.files[].path" <<<"$idx")
-    bash "$REPO_DIR/.config/quickshell/scripts/theme-install.sh" \
-      "$THEMES_REPO" master "$STARTER_THEME" "$commit" "${paths[@]}" | sed 's/^/    /'
-    ok "seeded $STARTER_THEME — open Super+Shift+T to browse, Super+/ → Marketplace for more"
-  fi
+mkdir -p "$HOME/.config/themes"; ok "~/.config/themes ready"
+
+THEME_IDX="" THEME_COMMIT=""
+theme_catalog() { # fetch index.json once; needs jq + curl
+  [ -n "$THEME_IDX" ] && return 0
+  command -v jq >/dev/null || { command -v pacman >/dev/null && ask "themes need jq — install it?" && sudo pacman -S --needed jq; }
+  command -v jq >/dev/null || { warn "jq missing — skipping; use the Marketplace tab in-session instead"; return 1; }
+  THEME_IDX="$(curl -fsSL "https://raw.githubusercontent.com/$THEMES_REPO/master/index.json")" || { warn "couldn't reach the theme store"; return 1; }
+  THEME_COMMIT="$(jq -r '.commit' <<<"$THEME_IDX")"
+}
+install_theme() { # $1 = name
+  local name="$1" paths
+  [ -d "$HOME/.config/themes/$name" ] && { skip "$name (already installed)"; return 0; }
+  mapfile -t paths < <(jq -r ".themes[]|select(.name==\"$1\")|.files[].path" <<<"$THEME_IDX")
+  [ "${#paths[@]}" -gt 0 ] || { warn "no theme named '$name' in the catalog"; return 1; }
+  printf "  downloading %s…\n" "$name"
+  bash "$REPO_DIR/.config/quickshell/scripts/theme-install.sh" \
+    "$THEMES_REPO" master "$name" "$THEME_COMMIT" "${paths[@]}" >/dev/null \
+    && ok "$name installed" || warn "$name failed"
+}
+
+if [ "$DO_THEME" = 1 ]; then
+  choose "How many themes to download now? (the rest are one click away in Super+/ → Marketplace)" \
+    "just a starter ($STARTER_THEME, ~40MB)" \
+    "all themes (~240MB)" \
+    "let me pick" \
+    "none — I'll grab them from the Marketplace later"
+  case "$REPLY" in
+    1) theme_catalog && install_theme "$STARTER_THEME" ;;
+    2) if theme_catalog; then
+         for t in $(jq -r '.themes[].name' <<<"$THEME_IDX"); do install_theme "$t"; done
+       fi ;;
+    3) if theme_catalog; then
+         echo "  available:"
+         jq -r '.themes[] | "    \(.name)  ·  \((.bytes/1048576)|floor)MB  ·  \(.tagline)"' <<<"$THEME_IDX"
+         read -rp "  names to install (space-separated): " picks
+         for t in $picks; do install_theme "$t"; done
+       fi ;;
+    *) skip "no themes seeded — open Super+/ → Marketplace anytime" ;;
+  esac
 else
-  skip "starter theme skipped"
+  skip "themes skipped (--no-theme)"
 fi
 
 # ── services ──────────────────────────────────────────────────────────────
@@ -146,8 +190,10 @@ else skip "services left alone"; fi
 
 # ── frostify (optional, separate app that fills the frostify.qml slot) ────
 if [ "$DO_FROSTIFY" = 1 ] && [ ! -d "$HOME/frostify" ]; then
-  say "Frostify (optional music overlay, bound to Super+S)"
-  if ask "clone frostify to ~/frostify?"; then
+  say "Frostify (optional)"
+  echo "  A full-screen now-playing overlay — album art, lyrics, controls — that"
+  echo "  follows Spotify and any MPRIS player and matches your active theme (Super+S)."
+  if ask "install Frostify to ~/frostify?"; then
     git clone --depth 1 "$FROSTIFY_REPO" "$HOME/frostify" && ok "cloned ~/frostify" \
       || warn "clone failed — set FROSTIFY_REPO at the top of this script if the URL is wrong"
   fi
