@@ -57,10 +57,12 @@ noto-fonts-extra
 noto-fonts-emoji
 
 # media + net helpers
-#   ffmpeg — video-wallpaper still extraction + marketplace catalog thumbs
-#   curl   — the Super+/ theme marketplace fetches the catalog + theme files
+#   ffmpeg    — video-wallpaper still extraction + marketplace catalog thumbs
+#   curl      — the Super+/ theme marketplace fetches the catalog + theme files
+#   libnotify — notify-send, used for the "update available" nudge
 ffmpeg
 curl
+libnotify
 
 # authoring only (not needed to run the rice): jq is used by the themes repo's
 # build-catalog.sh to regenerate index.json. install it if you're building themes.

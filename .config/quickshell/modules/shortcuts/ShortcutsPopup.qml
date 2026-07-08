@@ -59,7 +59,8 @@ PanelWindow {
     readonly property string updRepo: mktHome + "/dotfiles"
     property string updState: "idle"    // idle|checking|uptodate|behind|offline|pulling|done|error
     property int updBehind: 0
-    property string updLocal: ""        // "abc1234 · 3 days ago"
+    property string updLocal: ""        // "abc1234 (3 days ago)"
+    property int updNotifiedBehind: 0   // how many commits we last notified about (no spam)
 
     // ── per-theme widget toggles ────────────────────────────────────────
     // The active theme's desktop widgets (clock/visualizer/sysinfo/lyrics),
@@ -422,6 +423,25 @@ PanelWindow {
         root.updBehind = parseInt(parts[1]) || 0
         root.updLocal = parts[2] || ""
         root.updState = root.updBehind > 0 ? "behind" : "uptodate"
+        // notify once when a new update appears (again only if more land later)
+        if (root.updBehind > root.updNotifiedBehind) {
+            root.updNotifiedBehind = root.updBehind
+            Quickshell.execDetached(["notify-send", "-a", "hypr-dots",
+                "-i", "software-update-available", "hypr-dots update available",
+                root.updBehind + " new commit" + (root.updBehind > 1 ? "s" : "")
+                    + " — open Super+/ → Settings to update"])
+        } else if (root.updBehind === 0) {
+            root.updNotifiedBehind = 0     // reset after a successful update
+        }
+    }
+
+    // check on launch (after a short settle) and every 6 hours after, in the
+    // background — the Settings banner just reflects the latest result.
+    Timer {
+        interval: 120000
+        running: true
+        repeat: true
+        onTriggered: { root.checkUpdates(); interval = 6 * 3600 * 1000 }
     }
 
     Process {
