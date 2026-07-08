@@ -403,10 +403,11 @@ PanelWindow {
     function checkUpdates() {
         if (updCheckProc.running || root.updState === "pulling") return
         root.updState = "checking"
-        // OK\t<behind>\t<sha>\t<reldate> | OFFLINE\t<sha>\t<reldate> | ERR
+        // tab-separated: OK<t><behind><t><sha (reldate)> | OFFLINE<t><sha (reldate)> | ERR
+        // the version reads as one field ("abc1234 (3 days ago)") so it survives the split
         updCheckProc.command = ["bash", "-c",
             'cd "$1" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 || { printf ERR; exit 0; }; ' +
-            'loc="$(git log -1 --format="%h\\t%cr" 2>/dev/null)"; ' +
+            'loc="$(git log -1 --format="%h (%cr)" 2>/dev/null)"; ' +
             'if ! git fetch --quiet 2>/dev/null; then printf "OFFLINE\\t%s" "$loc"; exit 0; fi; ' +
             'up="$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/main)"; ' +
             'n="$(git rev-list --count HEAD.."$up" 2>/dev/null || echo 0)"; ' +
@@ -417,12 +418,9 @@ PanelWindow {
     function onUpdCheck(text) {
         const parts = (text || "").trim().split("\t")
         if (parts[0] === "ERR" || parts[0] === "") { root.updState = "error"; return }
-        if (parts[0] === "OFFLINE") {
-            root.updLocal = (parts[1] || "") + (parts[2] ? "  ·  " + parts[2] : "")
-            root.updState = "offline"; return
-        }
+        if (parts[0] === "OFFLINE") { root.updLocal = parts[1] || ""; root.updState = "offline"; return }
         root.updBehind = parseInt(parts[1]) || 0
-        root.updLocal = (parts[2] || "") + (parts[3] ? "  ·  " + parts[3] : "")
+        root.updLocal = parts[2] || ""
         root.updState = root.updBehind > 0 ? "behind" : "uptodate"
     }
 
