@@ -16,6 +16,11 @@ control center — all hand-written, no matugen, no auto-theming.
 - **Themes are whole worlds, not just colors.** Each ships its own bar, clock, audio
   visualizer, lyrics, lock screen, notifications, and control-center chrome — swap the
   wallpaper and the entire desktop re-skins to match. Video wallpapers supported.
+- **The theme reaches [Frostify](https://github.com/AidanMercer/frostify) too.** Frostify —
+  the full-screen now-playing overlay (`Super+S`) — follows the active theme live: each theme
+  ships a `frostify.qml` slot that reskins the overlay's card, backdrop, and type to match the
+  wallpaper and palette, with per-theme track-change effects. Switch themes and the music app
+  changes with everything else; it's a separate install but part of the same visual system.
 - **A theme marketplace, in the shell.** `Super+/` → **Marketplace**: browse every theme,
   see a preview + size, and download one into place with a click. No git, no manual copying.
 - **Vernissage theme switcher** (`Super+Shift+T`) — a gallery rail of your installed themes
