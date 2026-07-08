@@ -50,6 +50,8 @@ PanelWindow {
     property var mktInstalled: ({})     // name -> true (dirs present in ~/.config/themes)
     property var mktProgress: ({})      // name -> {done,total} while downloading
     property string mktBusy: ""         // the one theme downloading right now
+    property int mktRow: 0              // keyboard cursor within the store list
+    property string mktArmedRemove: ""  // theme name whose removal is armed (confirm)
 
     // ── per-theme widget toggles ────────────────────────────────────────
     // The active theme's desktop widgets (clock/visualizer/sysinfo/lyrics),
@@ -328,11 +330,58 @@ PanelWindow {
     function progressFor(name) { return root.mktProgress[name] ?? null }
     function isInstalled(name) { return root.mktInstalled[name] === true }
 
+    // the theme on the desktop right now — refuse to delete it out from under
+    // the running shell (awww would be left pointing at a deleted wallpaper)
+    function isActive(name) {
+        const d = ActiveTheme.focusedDir
+        return d !== "" && d.substring(d.lastIndexOf("/") + 1) === name
+    }
+
+    Process {
+        id: removeProc
+        stdout: StdioCollector { onStreamFinished: root.scanInstalled() }
+    }
+    function uninstallTheme(name) {
+        if (installProc.running || removeProc.running) return
+        if (root.isActive(name)) return
+        // command built at call time; name is validated to a safe slug so the
+        // rm can never wander outside ~/.config/themes
+        removeProc.command = ["bash", "-c",
+            'n="$1"; case "$n" in *[!a-zA-Z0-9_-]*|"") exit 0;; esac; ' +
+            'rm -rf -- "$HOME/.config/themes/$n"; echo done',
+            "_", name]
+        removeProc.running = true
+        root.mktArmedRemove = ""
+    }
+
+    // Enter on the selected store row: install if absent, arm→confirm remove if
+    // present. install needs no confirm; removal is destructive so it double-taps.
+    function mktActivate() {
+        const t = root.mktThemes[root.mktRow]
+        if (!t || root.mktBusy !== "") return
+        if (root.isInstalled(t.name)) {
+            if (root.isActive(t.name)) return                 // can't remove what's live
+            if (root.mktArmedRemove === t.name) root.uninstallTheme(t.name)
+            else root.mktArmedRemove = t.name                 // first press arms it
+        } else {
+            root.mktArmedRemove = ""
+            root.installTheme(t)
+        }
+    }
+    function mktMove(d) {
+        if (root.mktThemes.length === 0) return
+        root.mktArmedRemove = ""                              // moving cancels a pending remove
+        root.mktRow = Math.max(0, Math.min(root.mktThemes.length - 1, root.mktRow + d))
+        mktList.positionViewAtIndex(root.mktRow, ListView.Contain)
+    }
+
     // load the store the first time its tab is opened; refresh installed each
-    // time, and always land at the top of the list
+    // time, reset the cursor, and always land at the top of the list
     onTabChanged: if (tab === 2) {
-        if (mktThemes.length === 0 && !mktLoading) loadCatalog()
+        if (!mktLoading) loadCatalog()      // refresh each open (cache shows if offline)
         scanInstalled()
+        mktRow = 0
+        mktArmedRemove = ""
         Qt.callLater(() => mktList.positionViewAtBeginning())
     }
 
@@ -429,11 +478,16 @@ PanelWindow {
                 if (e.key === Qt.Key_Left)  { root.tab = Math.max(0, root.tab - 1); e.accepted = true; return }
                 if (e.key === Qt.Key_Right) { root.tab = Math.min(root.tabCount - 1, root.tab + 1); e.accepted = true; return }
 
-                // Marketplace tab: Up/Down scroll the list, everything else is
-                // swallowed (the store is mouse-driven; don't dismiss on a stray key).
+                // Marketplace tab: Up/Down move the cursor, Enter installs (or
+                // arms→confirms a remove); other keys are swallowed so a stray
+                // press doesn't dismiss the store.
                 if (root.tab === 2) {
-                    if (e.key === Qt.Key_Up)   { mktList.flick(0, 600);  e.accepted = true; return }
-                    if (e.key === Qt.Key_Down) { mktList.flick(0, -600); e.accepted = true; return }
+                    if (e.key === Qt.Key_Up)   { root.mktMove(-1); e.accepted = true; return }
+                    if (e.key === Qt.Key_Down) { root.mktMove(1);  e.accepted = true; return }
+                    if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
+                        root.mktActivate(); e.accepted = true; return
+                    }
+                    if (root.mktArmedRemove !== "") { root.mktArmedRemove = ""; e.accepted = true; return }
                     e.accepted = true
                     return
                 }
@@ -543,7 +597,9 @@ PanelWindow {
                     Text {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.tab === 0 ? "Esc to close" : "← → switch · Esc close"
+                        text: root.tab === 2 ? "↑↓ select · ↵ install · esc"
+                             : root.tab === 1 ? "← → switch · Esc close"
+                             : "Esc to close"
                         color: Theme.textMuted
                         font.pixelSize: 11
                     }
@@ -945,9 +1001,12 @@ PanelWindow {
                         delegate: Rectangle {
                             id: mrow
                             required property var modelData
+                            required property int index
                             readonly property var prog: root.progressFor(modelData.name)
                             readonly property bool installed: root.isInstalled(modelData.name)
                             readonly property bool downloading: prog !== null
+                            readonly property bool selected: root.mktRow === index
+                            readonly property bool armed: root.mktArmedRemove === modelData.name
                             readonly property int mb: Math.max(1, Math.round((modelData.bytes || 0) / 1048576))
                             readonly property var tags: {
                                 const a = []
@@ -961,11 +1020,22 @@ PanelWindow {
                             width: mktList.width
                             height: 78
                             radius: 10
-                            color: mrowHover.hovered ? Theme.rowHover : "transparent"
-                            border.color: Theme.glassBorder
+                            color: mrow.selected ? Theme.rowSelected
+                                 : (mrowHover.hovered ? Theme.rowHover : "transparent")
+                            border.color: mrow.selected ? Theme.accent : Theme.glassBorder
                             border.width: 1
 
                             HoverHandler { id: mrowHover }
+                            // hovering moves the keyboard cursor so mouse + keys agree
+                            Connections {
+                                target: mrowHover
+                                function onHoveredChanged() {
+                                    if (mrowHover.hovered && root.mktRow !== mrow.index) {
+                                        root.mktRow = mrow.index
+                                        root.mktArmedRemove = ""
+                                    }
+                                }
+                            }
 
                             ClippingRectangle {
                                 id: mthumb
@@ -1054,7 +1124,7 @@ PanelWindow {
                                 anchors.right: parent.right
                                 anchors.rightMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 134; height: 54
+                                width: 156; height: 56
 
                                 // downloading: progress bar + count
                                 Column {
@@ -1082,31 +1152,82 @@ PanelWindow {
                                     }
                                 }
 
-                                // installed: ✓ + Apply
+                                // armed for removal: confirm / cancel
+                                Column {
+                                    anchors.centerIn: parent
+                                    spacing: 5
+                                    visible: mrow.armed && !mrow.downloading
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: "remove theme?"
+                                        color: Theme.danger
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                    }
+                                    Row {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        spacing: 6
+                                        Rectangle {
+                                            width: cfT.implicitWidth + 18; height: 26; radius: 7
+                                            color: cfMa.containsMouse ? Theme.danger
+                                                 : Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.18)
+                                            border.color: Theme.danger; border.width: 1
+                                            Text { id: cfT; anchors.centerIn: parent; text: "remove"
+                                                   color: Theme.textBright; font.pixelSize: 12 }
+                                            MouseArea { id: cfMa; anchors.fill: parent; hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.uninstallTheme(mrow.modelData.name) }
+                                        }
+                                        Rectangle {
+                                            width: cnT.implicitWidth + 16; height: 26; radius: 7
+                                            color: cnMa.containsMouse ? Theme.rowSelected : Theme.rowHover
+                                            border.color: Theme.glassBorder; border.width: 1
+                                            Text { id: cnT; anchors.centerIn: parent; text: "cancel"
+                                                   color: Theme.textSecondary; font.pixelSize: 12 }
+                                            MouseArea { id: cnMa; anchors.fill: parent; hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.mktArmedRemove = "" }
+                                        }
+                                    }
+                                }
+
+                                // installed: apply + remove (remove hidden for the live theme)
                                 Row {
                                     anchors.centerIn: parent
-                                    spacing: 8
-                                    visible: mrow.installed && !mrow.downloading
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: "✓ installed"
-                                        color: Theme.textMuted
-                                        font.pixelSize: 12
-                                    }
+                                    spacing: 6
+                                    visible: mrow.installed && !mrow.downloading && !mrow.armed
                                     Rectangle {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        width: applyT.implicitWidth + 20; height: 28; radius: 8
-                                        color: applyMa.containsMouse ? Theme.rowSelected : Theme.rowHover
+                                        width: apT.implicitWidth + 20; height: 30; radius: 8
+                                        color: apMa.containsMouse ? Theme.rowSelected : Theme.rowHover
                                         border.color: Theme.glassBorder; border.width: 1
-                                        Text { id: applyT; anchors.centerIn: parent; text: "apply"
+                                        Text { id: apT; anchors.centerIn: parent; text: "apply"
                                                color: Theme.textBright; font.pixelSize: 12 }
                                         MouseArea {
-                                            id: applyMa; anchors.fill: parent; hoverEnabled: true
+                                            id: apMa; anchors.fill: parent; hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
+                                                root.mktRow = mrow.index
                                                 Quickshell.execDetached(["qs", "ipc", "call", "theme", "apply", mrow.modelData.name])
                                                 root.closeMenu()
                                             }
+                                        }
+                                    }
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        visible: !root.isActive(mrow.modelData.name)
+                                        width: rmT.implicitWidth + 18; height: 30; radius: 8
+                                        color: rmMa.containsMouse
+                                               ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.16) : "transparent"
+                                        border.color: rmMa.containsMouse ? Theme.danger : Theme.glassBorder
+                                        border.width: 1
+                                        Text { id: rmT; anchors.centerIn: parent; text: "remove"
+                                               color: rmMa.containsMouse ? Theme.danger : Theme.textMuted
+                                               font.pixelSize: 12 }
+                                        MouseArea {
+                                            id: rmMa; anchors.fill: parent; hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: { root.mktRow = mrow.index; root.mktArmedRemove = mrow.modelData.name }
                                         }
                                     }
                                 }
@@ -1114,7 +1235,7 @@ PanelWindow {
                                 // available: download button (dimmed while another install runs)
                                 Rectangle {
                                     anchors.centerIn: parent
-                                    visible: !mrow.installed && !mrow.downloading
+                                    visible: !mrow.installed && !mrow.downloading && !mrow.armed
                                     readonly property bool blocked: root.mktBusy !== ""
                                     width: 118; height: 34; radius: 9
                                     color: dlMa.containsMouse && !blocked ? Theme.accent : Theme.rowSelected
@@ -1132,7 +1253,7 @@ PanelWindow {
                                     MouseArea {
                                         id: dlMa; anchors.fill: parent; hoverEnabled: true
                                         cursorShape: parent.blocked ? Qt.ArrowCursor : Qt.PointingHandCursor
-                                        onClicked: if (!parent.blocked) root.installTheme(mrow.modelData)
+                                        onClicked: if (!parent.blocked) { root.mktRow = mrow.index; root.installTheme(mrow.modelData) }
                                     }
                                 }
                             }
