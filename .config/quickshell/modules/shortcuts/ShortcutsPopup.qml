@@ -53,6 +53,14 @@ PanelWindow {
     property int mktRow: 0              // keyboard cursor within the store list
     property string mktArmedRemove: ""  // theme name whose removal is armed (confirm)
 
+    // ── self-update ─────────────────────────────────────────────────────
+    // the engine is a git clone at ~/dotfiles; check if it's behind the remote
+    // and offer a ff-only pull. checked when the Settings tab opens.
+    readonly property string updRepo: mktHome + "/dotfiles"
+    property string updState: "idle"    // idle|checking|uptodate|behind|offline|pulling|done|error
+    property int updBehind: 0
+    property string updLocal: ""        // "abc1234 · 3 days ago"
+
     // ── per-theme widget toggles ────────────────────────────────────────
     // The active theme's desktop widgets (clock/visualizer/sysinfo/lyrics),
     // scanned when the sheet opens. Rows only appear for slots the theme
@@ -386,7 +394,59 @@ PanelWindow {
         mktArmedRemove = ""
         Qt.callLater(() => mktList.positionViewAtBeginning())
     }
-    onTabChanged: if (tab === 2) enterMarketplace()
+
+    // ── self-update: fetch + compare HEAD to the tracking branch ─────────
+    Process {
+        id: updCheckProc
+        stdout: StdioCollector { onStreamFinished: root.onUpdCheck(text) }
+    }
+    function checkUpdates() {
+        if (updCheckProc.running || root.updState === "pulling") return
+        root.updState = "checking"
+        // OK\t<behind>\t<sha>\t<reldate> | OFFLINE\t<sha>\t<reldate> | ERR
+        updCheckProc.command = ["bash", "-c",
+            'cd "$1" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 || { printf ERR; exit 0; }; ' +
+            'loc="$(git log -1 --format="%h\\t%cr" 2>/dev/null)"; ' +
+            'if ! git fetch --quiet 2>/dev/null; then printf "OFFLINE\\t%s" "$loc"; exit 0; fi; ' +
+            'up="$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/main)"; ' +
+            'n="$(git rev-list --count HEAD.."$up" 2>/dev/null || echo 0)"; ' +
+            'printf "OK\\t%s\\t%s" "$n" "$loc"',
+            "_", root.updRepo]
+        updCheckProc.running = true
+    }
+    function onUpdCheck(text) {
+        const parts = (text || "").trim().split("\t")
+        if (parts[0] === "ERR" || parts[0] === "") { root.updState = "error"; return }
+        if (parts[0] === "OFFLINE") {
+            root.updLocal = (parts[1] || "") + (parts[2] ? "  ·  " + parts[2] : "")
+            root.updState = "offline"; return
+        }
+        root.updBehind = parseInt(parts[1]) || 0
+        root.updLocal = (parts[2] || "") + (parts[3] ? "  ·  " + parts[3] : "")
+        root.updState = root.updBehind > 0 ? "behind" : "uptodate"
+    }
+
+    Process {
+        id: updPullProc
+        stdout: SplitParser { onRead: (line) => { if (line === "__ok__") root.updState = "done"
+                                                  else if (line === "__fail__") root.updState = "error" } }
+    }
+    function doUpdate() {
+        if (root.updState !== "behind" || updPullProc.running) return
+        root.updState = "pulling"
+        // ff-only so a diverged/locally-edited clone fails safe instead of merging
+        updPullProc.command = ["bash", "-c",
+            'cd "$1" || { echo __fail__; exit 0; }; ' +
+            'if git pull --ff-only >/dev/null 2>&1; then echo __ok__; else echo __fail__; fi',
+            "_", root.updRepo]
+        updPullProc.running = true
+    }
+
+    onTabChanged: {
+        if (tab === 2) enterMarketplace()
+        else if (tab === 1 && (updState === "idle" || updState === "error" || updState === "offline"))
+            checkUpdates()
+    }
 
     // ── lifecycle ───────────────────────────────────────────────────────
     function openMenu(which) {
@@ -397,6 +457,8 @@ PanelWindow {
         settingsRow = 0
         scanThemeSlots()
         if (which === 2) enterMarketplace()   // reopening onto tab 2 won't fire onTabChanged
+        else if (which === 1 && (updState === "idle" || updState === "error" || updState === "offline"))
+            checkUpdates()
         open = true
         Qt.callLater(card.forceActiveFocus)
     }
@@ -720,6 +782,102 @@ PanelWindow {
                     width: parent.width
                     spacing: 10
                     visible: root.tab === 1
+
+                    // ── engine update banner (checks ~/dotfiles vs GitHub) ──
+                    Rectangle {
+                        width: parent.width
+                        height: 56
+                        radius: 10
+                        color: "transparent"
+                        border.color: root.updState === "behind" ? Theme.accent : Theme.glassBorder
+                        border.width: 1
+
+                        Row {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 16
+                            anchors.right: updBtn.left
+                            anchors.rightMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 12
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.updState === "behind" ? "⭳" : "⟳"
+                                color: root.updState === "behind" ? Theme.accent : Theme.textMuted
+                                font.pixelSize: 17
+                            }
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+                                Text {
+                                    text: "hypr-dots"
+                                    color: Theme.textBright
+                                    font.pixelSize: 14
+                                    font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    text: {
+                                        switch (root.updState) {
+                                        case "checking": return "checking for updates…"
+                                        case "behind":   return root.updBehind + " update" + (root.updBehind > 1 ? "s" : "") + " available"
+                                        case "pulling":  return "downloading update…"
+                                        case "done":     return "updated — press Super+Shift+R to restart the shell"
+                                        case "offline":  return "offline · " + root.updLocal
+                                        case "error":    return "couldn't check — needs a git clone + network"
+                                        default:         return "up to date · " + root.updLocal
+                                        }
+                                    }
+                                    color: root.updState === "done" ? Theme.accent : Theme.textMuted
+                                    font.pixelSize: 11
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+
+                        // action: download when behind, else re-check (hidden while working)
+                        Rectangle {
+                            id: updBtn
+                            anchors.right: parent.right
+                            anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            readonly property bool isUpdate: root.updState === "behind"
+                            visible: root.updState === "behind" || root.updState === "uptodate"
+                                     || root.updState === "offline" || root.updState === "error"
+                            width: updBtnT.implicitWidth + 26
+                            height: 30
+                            radius: 8
+                            color: isUpdate ? (updBtnMa.containsMouse ? Theme.accent : Theme.rowSelected)
+                                            : (updBtnMa.containsMouse ? Theme.rowSelected : Theme.rowHover)
+                            border.color: isUpdate ? Theme.accent : Theme.glassBorder
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 140 } }
+                            Text {
+                                id: updBtnT
+                                anchors.centerIn: parent
+                                text: updBtn.isUpdate ? "download" : "check"
+                                color: Theme.textBright
+                                font.pixelSize: 12
+                                font.weight: updBtn.isUpdate ? Font.DemiBold : Font.Normal
+                            }
+                            MouseArea {
+                                id: updBtnMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: updBtn.isUpdate ? root.doUpdate() : root.checkUpdates()
+                            }
+                        }
+                        Text {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 18
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: root.updState === "checking" || root.updState === "pulling"
+                            text: "…"
+                            color: Theme.textMuted
+                            font.pixelSize: 18
+                        }
+                    }
 
                     // row 0 — keep laptop awake when lid shut
                     Rectangle {
