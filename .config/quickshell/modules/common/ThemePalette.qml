@@ -31,6 +31,12 @@ QtObject {
         return 1.0
     }
 
+    // per-theme widget toggle (Super+Shift+/ → Settings): false while the
+    // user has this theme's sysinfo turned off. Bars gate their hover
+    // triggers on it (`visible: pal.sysinfoOn !== false`) so a disabled
+    // readout doesn't leave a dead button behind. Re-evaluates live.
+    readonly property bool sysinfoOn: ThemeSettings.on(pal.themeDir, "sysinfo")
+
     function apply(t) {
         neon = t.accent
         cyan = t.accent2

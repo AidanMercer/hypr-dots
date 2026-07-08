@@ -13,7 +13,7 @@
 - [ ] custom video-to-ASCII art on the background (video wallpapers shipped instead — still want the ascii version?)
 
 ## Theme settings & layout
-- [ ] per-theme settings in the Super+Shift+/ sheet (toggle clock on/off, smaller bits, etc.)
+- [x] per-theme settings in the Super+Shift+/ sheet (clock/visualizer/sysinfo/lyrics toggles, ThemeSettings singleton, loaders unmount live)
 - [x] auto-sizing for large monitor vs laptop/work screen (pal.uiScale, all themes)
 
 ## Wallpapers
@@ -21,9 +21,9 @@
 
 ## Slot parity (older themes missing newer slots)
 - [x] moon: lock.qml + notif.qml (breach-deck bare lock, HUD notif cards)
-- [ ] shiro: popup.qml + sysinfo.qml
-- [ ] avalon: sysinfo.qml
-- [ ] lonely-train: sysinfo.qml
+- [x] shiro: popup.qml (washi card) + sysinfo.qml (margin-notes slip)
+- [x] avalon: sysinfo.qml (hanging vitals ledger)
+- [x] lonely-train: sysinfo.qml (arrivals board)
 
 ## Misc
 - [ ] custom fastfetch

@@ -26,7 +26,17 @@ PanelWindow {
     property bool closing: false        // keep mapped through the close fade
     property int tab: 0                  // 0 = Shortcuts, 1 = Settings
     property int settingsRow: 0          // cursor within the Settings tab
-    readonly property int settingsCount: 2
+    readonly property int settingsCount: 2 + themeSlots.length
+
+    // ── per-theme widget toggles ────────────────────────────────────────
+    // The active theme's desktop widgets (clock/visualizer/sysinfo/lyrics),
+    // scanned when the sheet opens. Rows only appear for slots the theme
+    // actually ships — except the visualizer, which falls back to the Arch
+    // triangle and so always has something to turn off. State lives in the
+    // ThemeSettings singleton; the loaders unmount live when a toggle flips.
+    property var themeSlots: []
+    property string themeDirNow: ""
+    readonly property string themeName: themeDirNow ? themeDirNow.split("/").pop() : ""
 
     // ── keep-laptop-awake setting ──────────────────────────────────────
     // Holds a logind block-inhibitor on handle-lid-switch while on, so
@@ -150,6 +160,31 @@ PanelWindow {
         root.autoLock = autoLockFile.text().trim() === "1"
     }
 
+    Process {
+        id: slotProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const have = text.trim().split("\n").filter(s => s !== "")
+                const defs = [
+                    { slot: "clock",   label: "Clock",       desc: "The theme's desktop clock.",              needsFile: true },
+                    { slot: "cava",    label: "Visualizer",  desc: "The audio visualizer on the desktop.",    needsFile: false },
+                    { slot: "sysinfo", label: "System info", desc: "The ambient system readout.",             needsFile: true },
+                    { slot: "lyrics",  label: "Lyrics",      desc: "Live desktop lyrics while music plays.",  needsFile: true }
+                ]
+                root.themeSlots = defs.filter(d => !d.needsFile || have.indexOf(d.slot) !== -1)
+            }
+        }
+    }
+    // command built at call time, not bound — same one-behind trap as the loaders
+    function scanThemeSlots() {
+        root.themeDirNow = ActiveTheme.dirFor(root.targetScreen ? root.targetScreen.name : "")
+        if (root.themeDirNow === "") { root.themeSlots = []; return }
+        slotProc.command = ["bash", "-c",
+            'd="$1"; for s in clock sysinfo cava lyrics; do [ -f "$d/$s.qml" ] && echo "$s"; done; true',
+            "_", root.themeDirNow]
+        slotProc.running = true
+    }
+
     // While running, logind ignores the lid switch. Killed on shell exit, which
     // releases the lock — Component.onCompleted re-arms it on next start.
     Process {
@@ -176,6 +211,7 @@ PanelWindow {
         closing = false
         tab = which
         settingsRow = 0
+        scanThemeSlots()
         open = true
         Qt.callLater(card.forceActiveFocus)
     }
@@ -267,6 +303,8 @@ PanelWindow {
                     if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
                         if (root.settingsRow === 0) root.setKeepAwake(!root.keepAwake)
                         else if (root.settingsRow === 1) root.setAutoLock(!root.autoLock)
+                        else if (root.settingsRow - 2 < root.themeSlots.length)
+                            ThemeSettings.toggle(root.themeDirNow, root.themeSlots[root.settingsRow - 2].slot)
                         e.accepted = true; return
                     }
                     e.accepted = true   // swallow stray keys instead of closing
@@ -607,6 +645,110 @@ PanelWindow {
                                 x: root.autoLock ? parent.width - width - 3 : 3
                                 Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                                 Behavior on color { ColorAnimation { duration: 140 } }
+                            }
+                        }
+                    }
+
+                    // ── per-theme widget toggles ──
+                    Item {
+                        width: parent.width
+                        height: 24
+                        visible: root.themeSlots.length > 0
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: sectionTitle.left
+                            anchors.rightMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            height: 1
+                            color: Theme.divider
+                        }
+                        Text {
+                            id: sectionTitle
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.themeName.toUpperCase() + " WIDGETS"
+                            color: Theme.accent
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1.4
+                        }
+                    }
+
+                    Repeater {
+                        model: root.themeSlots
+
+                        delegate: Rectangle {
+                            id: slotRow
+                            required property int index
+                            required property var modelData
+                            readonly property int rowIdx: 2 + index
+                            readonly property bool isOn: ThemeSettings.on(root.themeDirNow, modelData.slot)
+
+                            width: parent.width
+                            height: 56
+                            radius: 10
+                            color: root.settingsRow === rowIdx ? Theme.rowSelected
+                                                               : (slotHover.hovered ? Theme.rowHover : "transparent")
+                            border.color: root.settingsRow === rowIdx ? Theme.glassBorder : "transparent"
+                            border.width: 1
+
+                            HoverHandler { id: slotHover }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.settingsRow = slotRow.rowIdx
+                                    ThemeSettings.toggle(root.themeDirNow, slotRow.modelData.slot)
+                                }
+                            }
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.right: slotToggle.left
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Text {
+                                    text: slotRow.modelData.label
+                                    color: Theme.textBright
+                                    font.pixelSize: 14
+                                    font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    width: parent.width
+                                    text: slotRow.modelData.desc
+                                    color: Theme.textMuted
+                                    font.pixelSize: 11
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Rectangle {
+                                id: slotToggle
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 44
+                                height: 24
+                                radius: 12
+                                color: slotRow.isOn ? Theme.accent : Theme.trackBg
+                                border.color: slotRow.isOn ? Theme.accent : Theme.glassBorder
+                                border.width: 1
+                                Behavior on color { ColorAnimation { duration: 140 } }
+
+                                Rectangle {
+                                    width: 18
+                                    height: 18
+                                    radius: 9
+                                    color: slotRow.isOn ? Theme.textBright : Theme.textMuted
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    x: slotRow.isOn ? parent.width - width - 3 : 3
+                                    Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                    Behavior on color { ColorAnimation { duration: 140 } }
+                                }
                             }
                         }
                     }

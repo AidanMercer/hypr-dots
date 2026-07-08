@@ -26,9 +26,12 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
     mask: Region {}
-    visible: infoPath !== ""
+    visible: infoPath !== "" && slotOn
 
     property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
+    // per-theme toggle (Super+Shift+/ → Settings); flipping it mounts/unmounts live
+    readonly property bool slotOn: ThemeSettings.on(root.themeDir, "sysinfo")
+    onSlotOnChanged: remount()
     property string infoPath: ""
     property bool wantsPal: false               // widget declares `property var pal`
     property int reloadNonce: 0
@@ -76,7 +79,7 @@ PanelWindow {
     // initial property — its bindings never see pal undefined. Called from the
     // exist-check collector (path/pal answer changed) and on nonce bumps.
     function remount() {
-        if (root.infoPath === "") { widgetLoader.source = ""; return }
+        if (root.infoPath === "" || !root.slotOn) { widgetLoader.source = ""; return }
         const url = root.fileUrl(root.infoPath) + "?v=" + root.reloadNonce
         widgetLoader.setSource(url, root.wantsPal ? { pal: root.pal } : {})
     }

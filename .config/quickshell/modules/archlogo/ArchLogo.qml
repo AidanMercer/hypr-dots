@@ -28,8 +28,13 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
     mask: Region {}                              // click-through scenery
+    visible: slotOn
 
     property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
+    // per-theme toggle (Super+Shift+/ → Settings) — covers the theme's cava.qml
+    // AND the default Arch triangle; flipping it mounts/unmounts live
+    readonly property bool slotOn: ThemeSettings.on(root.themeDir, "cava")
+    onSlotOnChanged: remount()
     property string cavaPath: ""                 // theme's cava.qml, "" if none
     property bool checked: false                 // existence check has returned
     property bool wantsPal: false                // widget declares `property var pal`
@@ -81,7 +86,7 @@ PanelWindow {
     // initial property — its bindings never see pal undefined. Called from the
     // exist-check collector (path/pal answer changed) and on nonce bumps.
     function remount() {
-        if (root.cavaPath === "") { themeLoader.source = ""; return }
+        if (root.cavaPath === "" || !root.slotOn) { themeLoader.source = ""; return }
         const url = root.fileUrl(root.cavaPath) + "?v=" + root.reloadNonce
         themeLoader.setSource(url, root.wantsPal ? { pal: root.pal } : {})
     }
@@ -100,7 +105,7 @@ PanelWindow {
     // default Arch visualizer — once we know the theme ships no cava.qml
     Loader {
         anchors.fill: parent
-        active: root.checked && root.cavaPath === ""
+        active: root.checked && root.cavaPath === "" && root.slotOn
         sourceComponent: archComponent
     }
     Component {

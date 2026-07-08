@@ -32,9 +32,13 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
     mask: Region {}
-    visible: lyricsPath !== ""
+    visible: lyricsPath !== "" && slotOn
 
     property string themeDir: ActiveTheme.dirFor(root.modelData ? root.modelData.name : "")
+    // per-theme toggle (Super+Shift+/ → Settings); also parks the engine so a
+    // disabled lyrics widget stops fetching/polling entirely
+    readonly property bool slotOn: ThemeSettings.on(root.themeDir, "lyrics")
+    onSlotOnChanged: remount()
     property string lyricsPath: ""
     property bool wantsPal: false               // widget declares `property var pal`
     property bool wantsEngine: false            // widget declares `property var engine`
@@ -52,7 +56,7 @@ PanelWindow {
     // wants it is actually loaded; a theme without lyrics costs nothing
     property LyricsEngine engine: LyricsEngine {
         isPrimary: root.isPrimary
-        active: root.lyricsPath !== "" && root.wantsEngine
+        active: root.lyricsPath !== "" && root.wantsEngine && root.slotOn
     }
 
     function fileUrl(p) {
@@ -102,7 +106,7 @@ PanelWindow {
     // initial properties — its bindings never see them undefined. Called from the
     // exist-check collector (path/flags answer changed) and on nonce bumps.
     function remount() {
-        if (root.lyricsPath === "") { lyricsLoader.source = ""; return }
+        if (root.lyricsPath === "" || !root.slotOn) { lyricsLoader.source = ""; return }
         engine.resetTuning()   // one theme's pacing tweak can't leak into the next
         const url = root.fileUrl(root.lyricsPath) + "?v=" + root.reloadNonce
         let props = {}
