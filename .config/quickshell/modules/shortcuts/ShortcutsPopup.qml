@@ -375,15 +375,18 @@ PanelWindow {
         mktList.positionViewAtIndex(root.mktRow, ListView.Contain)
     }
 
-    // load the store the first time its tab is opened; refresh installed each
-    // time, reset the cursor, and always land at the top of the list
-    onTabChanged: if (tab === 2) {
+    // entering the store: refresh the catalog + installed set, reset the cursor,
+    // land at the top. Called both on an in-sheet tab switch AND from openMenu
+    // (reopening straight onto tab 2 doesn't change `tab`, so onTabChanged alone
+    // would miss it). loadCatalog's own running-guard makes a double call cheap.
+    function enterMarketplace() {
         if (!mktLoading) loadCatalog()      // refresh each open (cache shows if offline)
         scanInstalled()
         mktRow = 0
         mktArmedRemove = ""
         Qt.callLater(() => mktList.positionViewAtBeginning())
     }
+    onTabChanged: if (tab === 2) enterMarketplace()
 
     // ── lifecycle ───────────────────────────────────────────────────────
     function openMenu(which) {
@@ -393,6 +396,7 @@ PanelWindow {
         tab = which
         settingsRow = 0
         scanThemeSlots()
+        if (which === 2) enterMarketplace()   // reopening onto tab 2 won't fire onTabChanged
         open = true
         Qt.callLater(card.forceActiveFocus)
     }
