@@ -48,6 +48,16 @@ dolphin
 ttf-nerd-fonts-symbols
 fastfetch
 
+# media + net helpers
+#   ffmpeg — video-wallpaper still extraction + marketplace catalog thumbs
+#   curl   — the Super+/ theme marketplace fetches the catalog + theme files
+ffmpeg
+curl
+
+# authoring only (not needed to run the rice): jq is used by the themes repo's
+# build-catalog.sh to regenerate index.json. install it if you're building themes.
+#   jq
+
 [aur]
 paru
 zen-browser-bin
