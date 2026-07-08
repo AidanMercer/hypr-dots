@@ -281,6 +281,19 @@ def http_json(url, attempts=2, timeout=12):
     raise last
 
 
+def artist_variants(artist):
+    """The full credit, then narrower fallbacks: LRCLIB matches on a single
+    primary artist, so "A, B", "A & B", "A feat. B" won't hit with the whole
+    string but "A" will. Returns de-duped candidates, widest first."""
+    out, seen = [], set()
+    for v in (artist, re.split(r"\s*(?:,|&|/|\bfeat\.?\b|\bft\.?\b|\bx\b|×|\bwith\b)\s*",
+                              artist, flags=re.I)[0]):
+        v = v.strip()
+        if v and v.lower() not in seen:
+            seen.add(v.lower()); out.append(v)
+    return out
+
+
 def fetch(a):
     try:
         want = float(a.duration)
@@ -298,11 +311,17 @@ def fetch(a):
             return http_json(f"{LRCLIB}/api/get?{q}")
         except urllib.error.HTTPError:
             pass
-    # fuzzy search fallback, prefer synced + closest duration
-    q2 = urllib.parse.urlencode({"track_name": a.title, "artist_name": a.artist})
-    results = http_json(f"{LRCLIB}/api/search?{q2}")
+    # fuzzy search fallback: try the full artist, then the primary artist alone
+    # (multi-artist / producer credits don't match LRCLIB's artist filter).
+    results = []
+    for art in artist_variants(a.artist):
+        q2 = urllib.parse.urlencode({"track_name": a.title, "artist_name": art})
+        results = http_json(f"{LRCLIB}/api/search?{q2}")
+        if isinstance(results, list) and results:
+            break
     if not isinstance(results, list) or not results:
         return None
+    # prefer synced, then the closest duration to the playing track
     results.sort(key=lambda r: (0 if r.get("syncedLyrics") else 1,
                                 abs((r.get("duration") or 0) - want)))
     return results[0]
