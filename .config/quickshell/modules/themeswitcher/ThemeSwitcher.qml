@@ -231,6 +231,10 @@ PanelWindow {
         if (!wallpaper) return
         if (applyProc.running) return   // don't clobber pendingThemeDir mid-flight
         root.pendingThemeDir = wallpaper.substring(0, wallpaper.lastIndexOf("/"))
+        // what awww actually shows (the still for an mp4) — persisted so login
+        // restores this wallpaper instead of a hardcoded file
+        root.lastAwwwTarget = wallpaper.endsWith(".mp4")
+            ? wallpaper.replace(/\.mp4$/, ".still.png") : wallpaper
         if (wallpaper.endsWith(".mp4")) {
             applyProc.command = ["bash", "-c",
                 'v="$1"; s="${v%.mp4}.still.png"; ' +
@@ -247,6 +251,7 @@ PanelWindow {
     }
 
     property string pendingThemeDir: ""
+    property string lastAwwwTarget: ""
 
     Process {
         id: applyProc
@@ -254,6 +259,11 @@ PanelWindow {
         onExited: (code, status) => {
             applyWatchdog.stop()
             ControlBus.notifyWallpaperChanged()
+            // remember this wallpaper so restore-wallpaper.sh brings it back at login
+            if (root.lastAwwwTarget !== "")
+                Quickshell.execDetached(["sh", "-c",
+                    'd="${XDG_CACHE_HOME:-$HOME/.cache}/hypr-dots"; mkdir -p "$d"; printf "%s\\n" "$1" > "$d/last-wallpaper"',
+                    "_", root.lastAwwwTarget])
             colorProc.command = ["bash", "-c",
                 '"$HOME/dotfiles/.config/hypr/theme-colors.sh" "$1"', "_", root.pendingThemeDir]
             colorProc.running = true

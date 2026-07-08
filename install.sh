@@ -121,6 +121,16 @@ for name in "${entries[@]}"; do
   mkdir -p "$(dirname "$dst")"; ln -s "$src" "$dst"; ok "$name -> repo"
 done
 
+# one config can't use ~ (qt6ct stores an absolute color-scheme path). rewrite
+# the author's home to yours in this clone so Qt apps get themed. no-op for the
+# author; harmless if the file's already yours.
+if [ "$HOME" != "/home/aidan" ]; then
+  qtc="$REPO_DIR/.config/qt6ct/qt6ct.conf"
+  if [ -f "$qtc" ] && grep -q "/home/aidan" "$qtc"; then
+    sed -i "s#/home/aidan#$HOME#g" "$qtc"; ok "qt6ct color path pointed at $HOME"
+  fi
+fi
+
 # ── per-machine hypr conf (untracked; hyprland.conf sources these) ────────
 say "Per-machine config"
 mon="$REPO_DIR/.config/hypr/monitors.conf"
@@ -205,12 +215,9 @@ cat <<EOF
 
   Log out and start Hyprland (from a TTY: \`Hyprland\`, or via your display manager).
 
-  ${c_warn}Worth a look before first boot:${c_off}
-   • hyprland.conf line ~38 sets the initial wallpaper to a file that's specific
-     to the author (~/Pictures/wallpapers/…). Point it at your starter theme's
-     still, e.g.  awww img ~/.config/themes/$STARTER_THEME/wallpaper*.still.png
-   • ~/.config/hypr/monitors.conf — set your real display layout.
-   • qt6ct.conf references an absolute /home/<author>/… path; update it to yours.
+  ${c_dim}Set your display layout in ~/.config/hypr/monitors.conf if the default
+  (auto, 1x scale) isn't right. The wallpaper restores to your last-applied
+  theme on login (or a starter one if you seeded any).${c_off}
 
   Keys:  Super+/ this cheatsheet (+ Marketplace tab) · Super+Shift+T themes ·
          Super+R launcher · Super+M control center
