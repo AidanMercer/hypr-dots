@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import Quickshell.Hyprland
 import "../common"
 
 // Per-monitor desktop clock that belongs to the *active theme*, not to the bar.
@@ -74,6 +75,22 @@ PanelWindow {
     Loader {
         id: widgetLoader
         anchors.fill: parent
+    }
+
+    // The lock or a fullscreen window hides the desktop entirely (same rule as
+    // VideoWall). Widgets that declare `property bool occluded` get told, so
+    // their loops:Infinite animations can stop keeping the render loop awake.
+    readonly property var hyprMon: Hyprland.monitorFor(root.modelData)
+    readonly property bool occluded: ControlBus.sessionLocked
+        || Hyprland.toplevels.values.some(t =>
+            t.wayland && t.wayland.fullscreen
+            && t.monitor === root.hyprMon
+            && t.workspace && t.workspace.active)
+    Binding {
+        target: widgetLoader.item
+        property: "occluded"
+        value: root.occluded
+        when: widgetLoader.item !== null && widgetLoader.item.hasOwnProperty("occluded")
     }
     // setSource instead of a source binding so the widget gets `pal` as an
     // initial property — its bindings never see pal undefined. Called from the

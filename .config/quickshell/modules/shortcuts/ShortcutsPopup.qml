@@ -44,9 +44,9 @@ PanelWindow {
     property bool keepAwake: false
 
     // ── auto-lock setting ───────────────────────────────────────────────
-    // The shell owns hypridle now (no exec-once in hyprland.conf): while on
-    // it runs as a child process and the 5 min lock in hypridle.conf applies;
-    // off means no idle daemon at all. Dies with the shell, comes back with it.
+    // hypridle always runs as a child process (it owns before_sleep, so the
+    // lock holds across suspend even with auto-lock off). The toggle only
+    // flips the idle listeners, via a runtime flag the conf listeners read.
     property bool autoLock: false
 
     // Captured at open() time so follow_mouse can't remap the window mid-use.
@@ -150,14 +150,28 @@ PanelWindow {
         printErrors: false
     }
 
+    // mirror for hypridle's listeners (runtime dir clears on reboot, so it's
+    // rewritten from the state file every startup)
+    readonly property string autoLockFlagPath: {
+        const rt = Quickshell.env("XDG_RUNTIME_DIR")
+        return ((rt && String(rt).length) ? String(rt) : "/tmp") + "/qs-autolock"
+    }
+    FileView {
+        id: autoLockFlag
+        path: root.autoLockFlagPath
+        printErrors: false
+    }
+
     function setAutoLock(v) {
         root.autoLock = v
         autoLockFile.setText(v ? "1\n" : "0\n")
+        autoLockFlag.setText(v ? "1\n" : "0\n")
     }
 
     Component.onCompleted: {
         root.keepAwake = stateFile.text().trim() === "1"
         root.autoLock = autoLockFile.text().trim() === "1"
+        autoLockFlag.setText(root.autoLock ? "1\n" : "0\n")
     }
 
     Process {
@@ -200,7 +214,7 @@ PanelWindow {
 
     Process {
         id: idleDaemon
-        running: root.autoLock
+        running: true
         command: ["hypridle"]
     }
 
@@ -616,7 +630,7 @@ PanelWindow {
                             }
                             Text {
                                 width: parent.width
-                                text: "Lock the screen after 5 minutes of inactivity."
+                                text: "Lock after 5 minutes idle, screens off after 10."
                                 color: Theme.textMuted
                                 font.pixelSize: 11
                                 elide: Text.ElideRight

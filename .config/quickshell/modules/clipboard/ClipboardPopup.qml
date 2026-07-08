@@ -390,6 +390,7 @@ PanelWindow {
                                 text: row.modelData.isImage
                                     ? row.modelData.meta
                                     : row.modelData.preview
+                                textFormat: Text.PlainText
                                 color: row.ListView.isCurrentItem ? Theme.textBright : Theme.textTertiary
                                 font.pixelSize: 13
                                 elide: Text.ElideRight

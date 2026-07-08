@@ -373,6 +373,7 @@ PanelWindow {
                                 text: appRow.isWeb
                                     ? "Search the web for “" + root.query + "”"
                                     : (appRow.modelData && appRow.modelData.name) || ""
+                                textFormat: Text.PlainText
                                 color: appRow.ListView.isCurrentItem ? Theme.textBright : Theme.textTertiary
                                 font.pixelSize: 13
                                 elide: Text.ElideRight

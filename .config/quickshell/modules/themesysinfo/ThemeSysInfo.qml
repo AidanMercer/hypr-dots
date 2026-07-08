@@ -75,6 +75,16 @@ PanelWindow {
         id: widgetLoader
         anchors.fill: parent
     }
+
+    // Overlay layer floats above fullscreen windows, so only the lock hides
+    // this widget. Same contract as ThemeClock: declare `property bool
+    // occluded` to be told, and park pollers/animations while it's true.
+    Binding {
+        target: widgetLoader.item
+        property: "occluded"
+        value: ControlBus.sessionLocked
+        when: widgetLoader.item !== null && widgetLoader.item.hasOwnProperty("occluded")
+    }
     // setSource instead of a source binding so the widget gets `pal` as an
     // initial property — its bindings never see pal undefined. Called from the
     // exist-check collector (path/pal answer changed) and on nonce bumps.

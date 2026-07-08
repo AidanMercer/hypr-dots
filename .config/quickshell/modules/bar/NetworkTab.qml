@@ -231,6 +231,7 @@ Item {
                 text: root.connType === "wifi" ? root.connName
                     : root.connType === "ethernet" ? "Ethernet"
                     : "Disconnected"
+                textFormat: Text.PlainText
                 color: Theme.textBright
                 font.pixelSize: 13
                 elide: Text.ElideRight
@@ -313,6 +314,7 @@ Item {
                         anchors.right: sigBar.left
                         anchors.rightMargin: 10
                         text: netRow.modelData.ssid + (netRow.modelData.security ? "  " + String.fromCodePoint(0xF033E) : "")
+                        textFormat: Text.PlainText
                         color: netRow.modelData.inUse ? Theme.textBright : Theme.textTertiary
                         font.pixelSize: 12
                         elide: Text.ElideRight

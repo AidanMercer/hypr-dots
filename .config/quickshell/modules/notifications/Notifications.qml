@@ -328,16 +328,19 @@ Scope {
                                     sourceSize.width: 13; sourceSize.height: 13
                                     smooth: true
                                     visible: status === Image.Ready
-                                    source: card.modelData.appIcon
-                                        ? (card.modelData.appIcon.includes("/")
-                                            ? card.modelData.appIcon
-                                            : Quickshell.iconPath(card.modelData.appIcon, true))
-                                        : ""
+                                    // local sources only — a remote appIcon URL would
+                                    // fire a request just by the card rendering
+                                    source: {
+                                        const ai = card.modelData.appIcon || ""
+                                        if (!ai || /^(https?|ftp):/i.test(ai)) return ""
+                                        return ai.includes("/") ? ai : Quickshell.iconPath(ai, true)
+                                    }
                                 }
 
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: (card.modelData.appName || "Notification").toUpperCase()
+                                    textFormat: Text.PlainText
                                     color: card.accentCol
                                     font.family: Theme.cyber ? Theme.mono : "Noto Sans"
                                     font.pixelSize: 9
@@ -369,6 +372,7 @@ Scope {
                         Text {
                             width: parent.width
                             text: card.modelData.summary
+                            textFormat: Text.PlainText
                             color: Theme.textBright
                             font.family: Theme.cyber ? Theme.mono : "Noto Sans"
                             font.pixelSize: 13
@@ -380,7 +384,9 @@ Scope {
                         Text {
                             width: parent.width
                             visible: text.length > 0
-                            text: card.modelData.body
+                            // keep body markup (links, bold) but drop <img> —
+                            // StyledText would happily fetch a remote src
+                            text: (card.modelData.body || "").replace(/<img[^>]*>/gi, "")
                             textFormat: Text.StyledText
                             color: Theme.textMuted
                             font.family: Theme.cyber ? Theme.mono : "Noto Sans"

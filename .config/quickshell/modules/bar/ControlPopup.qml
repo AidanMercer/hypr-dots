@@ -90,7 +90,7 @@ PanelWindow {
     }
     Component.onCompleted: rescanChrome()
 
-    onOpenChanged: if (open) { resetNav(); Qt.callLater(card.forceActiveFocus) }
+    onOpenChanged: if (open) { uptimeProc.running = true; resetNav(); Qt.callLater(card.forceActiveFocus) }
 
     function tabList() { return [networkTab, soundTab, bluetoothTab, powerTab, displayTab] }
     function activeTabItem() { return tabList()[currentTab] }
@@ -140,8 +140,9 @@ PanelWindow {
             }
         }
     }
-    Timer { interval: 1000; running: true; repeat: true; onTriggered: root.uptimeSeconds += 1 }
-    Timer { interval: 300000; running: true; repeat: true; onTriggered: uptimeProc.running = true }
+    // only ticks while the card is up — closed, uptime just goes stale until
+    // the re-read on open
+    Timer { interval: 1000; running: root.open; repeat: true; onTriggered: root.uptimeSeconds += 1 }
 
     // ── network: lightweight status poll feeding the Network tab ──
     property string connType: "none"   // "wifi" | "ethernet" | "none"
@@ -168,10 +169,11 @@ PanelWindow {
         running: false
         stdout: StdioCollector { onStreamFinished: root.parseNm(text) }
     }
-    // poll faster while open, lazily while closed
+    // poll only while open (nothing shows this state while closed) —
+    // triggeredOnStart refreshes the instant the card comes up
     Timer {
-        interval: root.open ? 5000 : 30000
-        running: true
+        interval: 5000
+        running: root.open
         repeat: true
         triggeredOnStart: true
         onTriggered: netProc.running = true

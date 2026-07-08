@@ -55,6 +55,7 @@ Item {
                 const a = root.player.trackArtist
                 return a ? t + "  ·  " + a : t
             }
+            textFormat: Text.PlainText
             color: root.playing ? Theme.textTertiary : Theme.textMuted
             font.family: root.cyberFont
             font.pixelSize: 12
