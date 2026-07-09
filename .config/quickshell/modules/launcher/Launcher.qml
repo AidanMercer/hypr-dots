@@ -3,12 +3,19 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
+import Quickshell.Widgets
 import "../common"
+import "units.js" as Units
+import "emoji.js" as Emoji
 
 // Fullscreen, transparent layer-shell overlay. The launcher card is centred
 // inside it; clicking the surrounding scrim (or pressing Esc) dismisses it.
 // Opened/closed over IPC: `qs ipc call launcher toggle` (wired to Super in
 // hyprland.conf).
+//
+// Multi-mode: the default mode searches apps (+ inline calc / unit-convert /
+// web-search). A leading prefix switches modes — `e ` emoji, `w ` windows,
+// `c ` clipboard, `u ` units. `=` still forces the calculator.
 PanelWindow {
     id: root
 
@@ -38,18 +45,47 @@ PanelWindow {
     // Reading DesktopEntries.applications in a live binding keeps the (lazy)
     // service populated; .values is the plain JS array of entries.
     readonly property var allApps: DesktopEntries.applications.values
-    readonly property var appResults: filterApps(query, allApps)
-    // A pure arithmetic query (or one forced with a leading "=") gets a synthetic
-    // calculator row pinned to the TOP; activate() copies its result.
-    readonly property var calcResult: evalMath(query)
-    readonly property bool hasCalc: calcResult !== null
-    // Whenever the user has typed something, append a synthetic web-search row as
-    // the last result so it's always visible and reachable by arrow keys.
-    // activate() decides whether a given row launches an app or runs the search.
-    property var results: {
-        if (query.length === 0) return appResults
-        const base = appResults.concat([{ webSearch: true }])
-        return hasCalc ? [{ calc: true }].concat(base) : base
+
+    // The active mode + its argument (the query with the prefix stripped).
+    // A prefix only triggers with a trailing space ("e ", not "e"), so plain
+    // app names never get hijacked.
+    readonly property var mode: {
+        const q = query
+        if (q.startsWith("e ")) return { kind: "emoji", arg: q.slice(2) }
+        if (q.startsWith("w ")) return { kind: "window", arg: q.slice(2) }
+        if (q.startsWith("c ")) return { kind: "clipboard", arg: q.slice(2) }
+        if (q.startsWith("u ")) return { kind: "unit", arg: q.slice(2) }
+        return { kind: "app", arg: q }
+    }
+    readonly property string modeLabel: ({
+        emoji: "emoji", window: "windows", clipboard: "clipboard", unit: "units"
+    })[mode.kind] || ""
+
+    // Every result is normalised to a row with a `kind`; the delegate renders
+    // and activate() dispatches off that. Keeps one list + one delegate for all
+    // the modes instead of a widget per mode.
+    readonly property var results: buildResults()
+    function buildResults() {
+        const m = root.mode
+        if (m.kind === "emoji")
+            return Emoji.search(m.arg, 60).map(x => ({ kind: "emoji", e: x.e, name: x.name }))
+        if (m.kind === "window")
+            return root.windowResults(m.arg)
+        if (m.kind === "clipboard")
+            return root.clipResults(m.arg)
+        if (m.kind === "unit") {
+            const u = Units.convert(m.arg, true)
+            return u ? [{ kind: "unit", text: u.text, copy: u.copy }] : []
+        }
+        // app mode: apps, with calc / unit / web rows folded in
+        const apps = filterApps(query, allApps).map(a => ({ kind: "app", entry: a, name: a.name }))
+        if (query.length === 0) return apps
+        const rows = []
+        const calc = evalMath(query)
+        if (calc) rows.push({ kind: "calc", expr: calc.expr, value: calc.value })
+        const unit = Units.convert(query, false)
+        if (unit) rows.push({ kind: "unit", text: unit.text, copy: unit.copy })
+        return rows.concat(apps).concat([{ kind: "web" }])
     }
 
     // Evaluate a numeric expression safely: only digits/operators/parens pass the
@@ -86,11 +122,122 @@ PanelWindow {
             })
     }
 
+    // ---- window mode ---------------------------------------------------
+    function windowResults(arg) {
+        const q = (arg || "").trim().toLowerCase()
+        let list = Hyprland.toplevels.values.map(t => {
+            const o = t.lastIpcObject || {}
+            return {
+                kind: "window",
+                address: o.address || "",
+                title: o.title || "",
+                cls: o.class || "",
+                wsId: (o.workspace && o.workspace.id) || -1,
+            }
+        }).filter(w => w.address)   // freshly-opened windows arrive address-less
+        if (q)
+            list = list.filter(w => w.title.toLowerCase().includes(q)
+                                  || w.cls.toLowerCase().includes(q))
+        list.sort((a, b) => a.cls.localeCompare(b.cls) || a.title.localeCompare(b.title))
+        return list
+    }
+    function iconForClass(cls) {
+        if (!cls) return Quickshell.iconPath("application-x-executable")
+        const entry = DesktopEntries.heuristicLookup(cls)
+        const name = (entry && entry.icon) ? entry.icon : cls.toLowerCase()
+        return Quickshell.iconPath(name, "application-x-executable")
+    }
+    function iconForApp(entry) {
+        return Quickshell.iconPath((entry && entry.icon) || "", "application-x-executable")
+    }
+    function closeWindow(item) {
+        if (!item || !item.address) return
+        Hyprland.dispatch("closewindow address:" + item.address)
+        Qt.callLater(Hyprland.refreshToplevels)
+    }
+
+    // ---- clipboard mode (reads cliphist; the shell's Super+V popup owns the
+    // wl-paste watchers that fill it, so we only read here) -----------------
+    property var clipEntries: []
+    property bool clipLoaded: false
+    function parseClip(text) {
+        const out = []
+        for (const line of text.split("\n")) {
+            if (!line) continue
+            const tab = line.indexOf("\t")
+            if (tab < 1) continue
+            const raw = line.slice(tab + 1)
+            const m = raw.match(/^\[\[ binary data\s+(.+?)\s+(\w+)\s+(\d+)x(\d+)/)
+            out.push({
+                line: line,
+                isImage: m !== null,
+                preview: m ? ("image · " + m[2] + " · " + m[3] + "×" + m[4])
+                           : raw.replace(/\s+/g, " ").trim()
+            })
+        }
+        return out
+    }
+    Process {
+        id: clipListProc
+        command: ["cliphist", "list"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.clipEntries = root.parseClip(text)
+                root.clipLoaded = true
+            }
+        }
+    }
+    function loadClips() { clipListProc.running = true }
+    function clipResults(arg) {
+        const q = (arg || "").trim().toLowerCase()
+        const all = q === "" ? clipEntries
+                             : clipEntries.filter(e => e.preview.toLowerCase().includes(q))
+        return all.slice(0, 40)
+                  .map(e => ({ kind: "clip", line: e.line, preview: e.preview, isImage: e.isImage }))
+    }
+    function copyClip(item) {
+        if (!item) return
+        Quickshell.execDetached(["bash", "-c",
+            'printf "%s" "$1" | cliphist decode | wl-copy', "_", item.line])
+        closeMenu()
+    }
+    function deleteClip(item) {
+        if (!item) return
+        clipDelProc.command = ["bash", "-c",
+            'printf "%s" "$1" | cliphist delete', "_", item.line]
+        clipDelProc.running = true
+    }
+    Process { id: clipDelProc; onExited: root.loadClips() }
+
+    // Lazily pull clipboard history the first time the user enters clipboard
+    // mode (mode is a fresh object each keystroke, so guard on clipLoaded).
+    onModeChanged: if (mode.kind === "clipboard" && !clipLoaded) loadClips()
+
+    // Keep the window list fresh while the launcher is up (filtering is local,
+    // so we only need to re-query on real window lifecycle events).
+    Connections {
+        target: Hyprland
+        enabled: root.open
+        function onRawEvent(event) {
+            switch (event.name) {
+            case "openwindow":
+            case "closewindow":
+            case "movewindow":
+            case "movewindowv2":
+            case "activewindowv2":
+                Hyprland.refreshToplevels()
+            }
+        }
+    }
+
+    // ---- actions -------------------------------------------------------
     function openMenu() {
         const m = Hyprland.focusedMonitor
         targetScreen = m ? (Quickshell.screens.find(s => s.name === m.name) ?? null) : null
         searchInput.text = ""   // resets query + selection via onTextChanged
         selectedIndex = 0
+        clipLoaded = false
+        Hyprland.refreshToplevels()
         open = true
         Qt.callLater(searchInput.forceActiveFocus)
     }
@@ -100,18 +247,8 @@ PanelWindow {
         entry.execute()
         closeMenu()
     }
-
-    // Activate a result row: the calc row copies its result, the synthetic
-    // web-search row runs the search, every other row is a real app to launch.
-    function activate(item) {
-        if (!item) return
-        if (item.calc) root.copyResult()
-        else if (item.webSearch) root.searchWeb(root.query)
-        else root.launch(item)
-    }
-    function copyResult() {
-        if (!root.hasCalc) return
-        Quickshell.execDetached(["wl-copy", "--", String(root.calcResult.value)])
+    function copyText(s) {
+        Quickshell.execDetached(["wl-copy", "--", String(s)])
         closeMenu()
     }
 
@@ -123,6 +260,31 @@ PanelWindow {
         Quickshell.execDetached(["xdg-open", root.searchUrl.arg(encodeURIComponent(q))])
         closeMenu()
     }
+
+    function activate(item) {
+        if (!item) return
+        switch (item.kind) {
+        case "app":    root.launch(item.entry); break
+        case "web":    root.searchWeb(root.query); break
+        case "calc":   root.copyText(item.value); break
+        case "unit":   root.copyText(item.copy); break
+        case "emoji":  root.copyText(item.e); break
+        case "clip":   root.copyClip(item); break
+        case "window":
+            Hyprland.dispatch("focuswindow address:" + item.address)
+            root.closeMenu()
+            break
+        }
+    }
+    // Delete key: destructive per-mode action on the selected row.
+    function deleteSelected() {
+        const it = root.results[root.selectedIndex]
+        if (!it) return false
+        if (it.kind === "window") { root.closeWindow(it); return true }
+        if (it.kind === "clip") { root.deleteClip(it); return true }
+        return false
+    }
+
     function moveSel(delta) {
         if (results.length === 0) return
         selectedIndex = Math.max(0, Math.min(results.length - 1, selectedIndex + delta))
@@ -135,9 +297,6 @@ PanelWindow {
     }
 
     // ---- scrim (click-outside to dismiss) ------------------------------
-    // Transparent (no dimming), like the control popup: the desktop shows
-    // through crisp and only the card is frosted, via the ignore_alpha
-    // layerrule for quickshell-launcher in hyprland.conf.
     MouseArea {
         anchors.fill: parent
         enabled: root.open
@@ -145,9 +304,6 @@ PanelWindow {
     }
 
     // ---- the floating launcher ----------------------------------------
-    // Only the search box is a frosted surface; the results below have no
-    // background and float over the clear desktop. The search box is centred
-    // both ways; results grow downward from it without shifting it.
     Item {
         id: morph
         width: searchBox.width
@@ -192,7 +348,7 @@ PanelWindow {
             // ── the only frosted surface: the search box ──
             Rectangle {
                 id: searchBox
-                width: 480
+                width: 520
                 height: 52
                 radius: Theme.popupRadius
                 color: Theme.glassBg
@@ -203,7 +359,6 @@ PanelWindow {
                 // scrim and close the launcher.
                 MouseArea { anchors.fill: parent }
 
-                // Thin highlight along the top edge, same as the popups.
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -226,12 +381,33 @@ PanelWindow {
                     color: Theme.textSecondary
                 }
 
+                // Little accent pill naming the active mode (hidden in app mode).
+                Rectangle {
+                    id: modePill
+                    visible: root.modeLabel.length > 0
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 22
+                    width: pillText.implicitWidth + 18
+                    radius: 11
+                    color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
+                    Text {
+                        id: pillText
+                        anchors.centerIn: parent
+                        text: root.modeLabel
+                        color: Theme.accent
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+                }
+
                 TextInput {
                     id: searchInput
                     anchors.left: searchGlyph.right
                     anchors.leftMargin: 12
-                    anchors.right: parent.right
-                    anchors.rightMargin: 16
+                    anchors.right: modePill.visible ? modePill.left : parent.right
+                    anchors.rightMargin: modePill.visible ? 8 : 16
                     anchors.verticalCenter: parent.verticalCenter
                     color: Theme.textBright
                     font.pixelSize: 16
@@ -251,6 +427,8 @@ PanelWindow {
                         else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
                             root.activate(root.results[root.selectedIndex])
                             e.accepted = true
+                        } else if (e.key === Qt.Key_Delete) {
+                            if (root.deleteSelected()) e.accepted = true
                         } else if (e.key === Qt.Key_Escape) {
                             root.closeMenu(); e.accepted = true
                         }
@@ -268,9 +446,6 @@ PanelWindow {
             }
 
             // ── results: their own frosted panel, floating below the box ──
-            // glassBg (alpha 0.22) clears the blur threshold, so the whole panel
-            // frosts; the row hover/selected tints sit below it and just read as
-            // faint highlights on top of the frost.
             Rectangle {
                 id: resultsPanel
                 width: searchBox.width
@@ -280,11 +455,8 @@ PanelWindow {
                 border.color: Theme.glassBorder
                 border.width: 1
 
-                // Swallow clicks on the panel background so they don't fall
-                // through to the scrim and close the launcher.
-                MouseArea { anchors.fill: parent }
+                MouseArea { anchors.fill: parent }   // swallow scrim clicks
 
-                // Thin highlight along the top edge, same as the search box.
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -314,17 +486,10 @@ PanelWindow {
                         onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
 
                         delegate: Rectangle {
-                            id: appRow
+                            id: rowItem
                             required property var modelData
                             required property int index
-                            // The synthetic last row (see root.results) is the
-                            // web-search action. Detect it by position — reading
-                            // a custom prop off the mixed app/web model via
-                            // modelData is unreliable, so use the index instead.
-                            readonly property bool isWeb: root.query.length > 0
-                                && index === root.results.length - 1
-                            // calc row, when present, is always pinned to index 0
-                            readonly property bool isCalc: root.hasCalc && index === 0
+                            readonly property string kind: modelData.kind
                             width: ListView.view.width
                             height: 42
                             radius: 11
@@ -333,49 +498,91 @@ PanelWindow {
                                 : (rowMa.containsMouse ? Theme.rowHover : "transparent")
                             Behavior on color { ColorAnimation { duration: 120 } }
 
-                            // App rows get a dot; the web-search row gets a
-                            // magnifier glyph in its place.
-                            Rectangle {
-                                id: dot
-                                visible: !appRow.isWeb && !appRow.isCalc
+                            // ── left visual: icon / emoji / glyph / dot ──
+                            IconImage {
+                                visible: rowItem.kind === "app" || rowItem.kind === "window"
                                 anchors.left: parent.left
-                                anchors.leftMargin: 14
+                                anchors.leftMargin: 9
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 8
-                                height: 8
-                                radius: 4
-                                color: appRow.ListView.isCurrentItem ? Theme.accent : "transparent"
-                                border.width: appRow.ListView.isCurrentItem ? 0 : 1
-                                border.color: Theme.dotBorder
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                width: 22
+                                height: 22
+                                source: rowItem.kind === "app"
+                                    ? root.iconForApp(rowItem.modelData.entry)
+                                    : root.iconForClass(rowItem.modelData.cls)
                             }
-
                             Text {
-                                visible: appRow.isWeb || appRow.isCalc
+                                visible: rowItem.kind === "emoji"
+                                anchors.left: parent.left
+                                anchors.leftMargin: 11
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: rowItem.kind === "emoji" ? rowItem.modelData.e : ""
+                                font.pixelSize: 20
+                            }
+                            Text {
+                                visible: rowItem.kind === "calc" || rowItem.kind === "unit" || rowItem.kind === "web"
                                 anchors.left: parent.left
                                 anchors.leftMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
-                                // nf-md-equal on the calc row, nf-md-magnify on web
-                                text: String.fromCodePoint(appRow.isCalc ? 0xF0DF1 : 0xF0349)
+                                // nf-md-equal for calc/unit, nf-md-magnify for web
+                                text: String.fromCodePoint(rowItem.kind === "web" ? 0xF0349 : 0xF0DF1)
                                 font.family: Theme.icon
                                 font.pixelSize: 16
                                 color: Theme.accent
                             }
-
-                            Text {
-                                // Fixed left edge so app names and the search
-                                // label line up regardless of leading icon.
+                            Rectangle {
+                                visible: rowItem.kind === "clip"
                                 anchors.left: parent.left
-                                anchors.leftMargin: 34
+                                anchors.leftMargin: 14
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 8; height: 8; radius: 4
+                                color: rowItem.ListView.isCurrentItem ? Theme.accent : "transparent"
+                                border.width: rowItem.ListView.isCurrentItem ? 0 : 1
+                                border.color: Theme.dotBorder
+                            }
+
+                            // ── primary label ──
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 40
+                                anchors.right: rightLabel.visible ? rightLabel.left : parent.right
+                                anchors.rightMargin: rowItem.kind === "window" ? 8 : 14
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: {
+                                    const d = rowItem.modelData
+                                    switch (rowItem.kind) {
+                                    case "web":    return "Search the web for “" + root.query + "”"
+                                    case "calc":   return d.expr
+                                    case "unit":   return d.text
+                                    case "emoji":  return d.name
+                                    case "clip":   return d.preview
+                                    case "window": return d.title || d.cls || "window"
+                                    default:       return d.name || ""
+                                    }
+                                }
+                                textFormat: Text.PlainText
+                                color: rowItem.ListView.isCurrentItem ? Theme.textBright : Theme.textTertiary
+                                font.pixelSize: 13
+                                elide: Text.ElideRight
+                            }
+
+                            // ── right-side secondary: calc result / window class ──
+                            Text {
+                                id: rightLabel
+                                visible: rowItem.kind === "calc" || rowItem.kind === "window"
                                 anchors.right: parent.right
                                 anchors.rightMargin: 14
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: appRow.isWeb
-                                    ? "Search the web for “" + root.query + "”"
-                                    : (appRow.modelData && appRow.modelData.name) || ""
+                                width: Math.min(implicitWidth, rowItem.width * 0.42)
+                                horizontalAlignment: Text.AlignRight
+                                text: {
+                                    if (rowItem.kind === "calc") return "= " + rowItem.modelData.value
+                                    if (rowItem.kind === "window") return rowItem.modelData.cls
+                                    return ""
+                                }
                                 textFormat: Text.PlainText
-                                color: appRow.ListView.isCurrentItem ? Theme.textBright : Theme.textTertiary
-                                font.pixelSize: 13
+                                color: rowItem.kind === "calc" ? Theme.accent : Theme.textMuted
+                                font.pixelSize: rowItem.kind === "calc" ? 13 : 11
+                                font.bold: rowItem.kind === "calc"
                                 elide: Text.ElideRight
                             }
 
@@ -384,26 +591,43 @@ PanelWindow {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onEntered: root.selectedIndex = appRow.index
-                                // Pass the real array element (not modelData) so
-                                // activate() reads webSearch reliably.
-                                onClicked: root.activate(root.results[appRow.index])
+                                onEntered: root.selectedIndex = rowItem.index
+                                onClicked: root.activate(root.results[rowItem.index])
                             }
                         }
                     }
 
-                    // Only reachable with an empty query and no apps installed;
-                    // a non-empty query always has at least the web-search row.
+                    // Empty state — mode-aware.
                     Text {
                         visible: root.results.length === 0
                         width: parent.width
-                        text: "No applications"
+                        text: ({
+                            emoji: "No emoji found",
+                            window: "No open windows",
+                            clipboard: root.clipEntries.length === 0 ? "Nothing copied yet" : "No matches",
+                            unit: "try  10 km to mi  ·  72f in c  ·  2gb mb",
+                            app: "No applications"
+                        })[root.mode.kind] || "No results"
                         color: Theme.textMuted
                         font.pixelSize: 13
                         font.italic: true
                         horizontalAlignment: Text.AlignHCenter
-                        topPadding: 6
-                        bottomPadding: 6
+                        topPadding: 8
+                        bottomPadding: 8
+                    }
+
+                    // Mode hints — only in the default app mode so the prefixes
+                    // are discoverable without cluttering the other modes.
+                    Item {
+                        width: parent.width
+                        height: 22
+                        visible: root.mode.kind === "app"
+                        Text {
+                            anchors.centerIn: parent
+                            text: "=  calc      e  emoji      w  windows      c  clipboard      u  units"
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                        }
                     }
                 }
             }

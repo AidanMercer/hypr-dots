@@ -11,7 +11,7 @@
 
 ## Apps / widgets
 - [ ] custom file explorer
-- [ ] multi-mode launcher (calc, unit/currency convert, emoji, clipboard search, kill/switch window)
+- [x] multi-mode launcher (prefix modes in the Super launcher: `e ` emoji, `w ` window switch/kill, `c ` clipboard, `u `/inline unit convert, `=` calc; live currency still TODO)
 - [ ] command palette (Super+P — fuzzy over theme apply, Shift+/ toggles, hypr actions)
 - [x] live lyrics (LyricsEngine in the shell + lyrics.qml per theme)
 - [x] better Super+M menu (popup.qml chrome slot)
