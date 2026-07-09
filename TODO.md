@@ -37,10 +37,7 @@
 - [x] captive portal watcher (nmcli monitor → sticky card → open login page)
 - [x] sysinfo hover-pin (Super+., overlay layer)
 - [ ] notification center — history + do-not-disturb (notifs are transient right now)
-- [ ] calendar / agenda popup on the date bubble
-- [ ] weather widget (bar or control popup)
 - [ ] battery-low + charge notifications (for the laptop)
-- [ ] screenshot markup / annotate after hyprshot
 
 ## Misc
 - [ ] custom fastfetch
