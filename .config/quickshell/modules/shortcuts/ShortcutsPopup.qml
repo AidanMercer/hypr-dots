@@ -122,7 +122,8 @@ PanelWindow {
                 { keys: ["Super", "G"],          desc: "GitHub Desktop" },
                 { keys: ["Super", "Shift", "C"], desc: "Claude" },
                 { keys: ["Super", "S"],          desc: "Frostify" },
-                { keys: ["Super", "R"],          desc: "App launcher" }
+                { keys: ["Super", "R"],          desc: "App launcher" },
+                { keys: ["Super", "P"],          desc: "Command palette" }
             ]},
             { title: "System", binds: [
                 { keys: ["Super", "M"],          desc: "Control center" },
