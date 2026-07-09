@@ -23,7 +23,7 @@
 ## Custom apps
 - [x] frostify — music player
 - [x] mica — file explorer
-- [ ] text / markdown editor (vim-style, live-preview, world80 themed)
+- [x] text / markdown editor (vellum — PySide6+QML modal vim editor + live themed markdown preview; follows world80 like mica/frostify, ~/dev/vellum)
 - [ ] browser (keyboard-driven, yazi-style modal nav)
 - [ ] image / gallery viewer (keyboard-driven, themed, pairs with mica)
 - [ ] pdf / document reader (vim keys, themed chrome)
