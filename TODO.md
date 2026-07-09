@@ -20,6 +20,10 @@
 - [x] clipboard history popup (cliphist)
 - [x] volume / brightness OSD
 
+## Custom apps
+- [x] frostify — music player
+- [x] mica — file explorer
+
 ## Theme settings & layout
 - [x] per-theme settings in the Super+Shift+/ sheet (clock/visualizer/sysinfo/lyrics toggles, ThemeSettings singleton, loaders unmount live)
 - [x] auto-sizing for large monitor vs laptop/work screen (pal.uiScale, all themes)
