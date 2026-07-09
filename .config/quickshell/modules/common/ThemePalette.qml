@@ -23,12 +23,15 @@ QtObject {
     property string barPosition: Tokens.DEFAULTS.bar_position
 
     // per-machine shrink: the laptop's eDP-1 panel makes the desktop widgets
-    // read too big; the desktop has no eDP-1 so it stays 1.0
+    // read too big; the desktop has no eDP-1 so it stays 1.0. On top of that
+    // sits the user's global interface scale (Settings → Interface scale), so
+    // sysinfo/clock/lyrics/cava all grow/shrink live when the slider moves.
     readonly property real uiScale: {
         const ss = Quickshell.screens
+        let base = 1.0
         for (let i = 0; i < ss.length; i++)
-            if (ss[i].name === "eDP-1") return 0.85
-        return 1.0
+            if (ss[i].name === "eDP-1") base = 0.85
+        return base * UiScale.factor
     }
 
     // per-theme widget toggle (Super+Shift+/ → Settings): false while the

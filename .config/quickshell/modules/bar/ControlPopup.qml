@@ -30,6 +30,11 @@ PanelWindow {
     readonly property bool open: monitorName !== "" && ControlBus.openMonitor === monitorName
     property int currentTab: 0  // 0 = network, 1 = sound, 2 = bluetooth, 3 = power, 4 = display
 
+    // global interface scale (Settings → Interface scale). The card's steady-state
+    // transform is this, so the whole popup — fonts, padding, spacing — grows as
+    // one and stays anchored to its bar edge via morph's transformOrigin.
+    readonly property real uiScale: UiScale.factor
+
     // ── theme chrome: the theme's popup.qml when it ships one, glass otherwise ──
     readonly property bool cyber: ThemeConfig.cyber
     readonly property color accentCol: ThemeConfig.accent      // primary accent
@@ -227,7 +232,7 @@ PanelWindow {
         states: State {
             name: "shown"
             when: root.open
-            PropertyChanges { target: morph; opacity: 1; scale: 1 }
+            PropertyChanges { target: morph; opacity: 1; scale: root.uiScale }
         }
 
         transitions: [

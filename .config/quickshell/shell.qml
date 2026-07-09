@@ -173,6 +173,17 @@ ShellRoot {
         function get(): string { return shellRoot.sysinfoPinned ? "1" : "0" }
     }
 
+    // Global interface scale (Settings → Interface scale slider). Exposed over
+    // IPC so it can be nudged from a keybind or driven headlessly for testing:
+    //   qs ipc call uiScale set 1.15   /   nudge 0.05   /   reset   /   get
+    IpcHandler {
+        target: "uiScale"
+        function set(v: real): void { UiScale.setFactor(v) }
+        function nudge(v: real): void { UiScale.nudge(v) }
+        function reset(): void { UiScale.setFactor(1.0) }
+        function get(): string { return String(UiScale.factor) }
+    }
+
     // Re-read the active theme's config.toml whenever the wallpaper changes.
     Connections {
         target: ControlBus

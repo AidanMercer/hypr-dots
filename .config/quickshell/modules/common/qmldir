@@ -4,4 +4,5 @@ singleton ThemeConfig 1.0 ThemeConfig.qml
 singleton AudioBus 1.0 AudioBus.qml
 singleton ActiveTheme 1.0 ActiveTheme.qml
 singleton ThemeSettings 1.0 ThemeSettings.qml
+singleton UiScale 1.0 UiScale.qml
 ThemePalette ThemePalette.qml

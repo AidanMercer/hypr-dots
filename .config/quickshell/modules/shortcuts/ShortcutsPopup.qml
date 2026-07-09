@@ -897,6 +897,120 @@ PanelWindow {
                         }
                     }
 
+                    // interface scale — one knob for the control center + desktop
+                    // widgets. Mouse/wheel driven (a slider isn't in the Up/Down
+                    // toggle nav); writes UiScale, which rescales everything live.
+                    Rectangle {
+                        width: parent.width
+                        height: 68
+                        radius: 10
+                        color: scaleHover.hovered ? Theme.rowHover : "transparent"
+
+                        HoverHandler { id: scaleHover }
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 16
+                            anchors.right: scaleControl.left
+                            anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 3
+
+                            Text {
+                                text: "Interface scale"
+                                color: Theme.textBright
+                                font.pixelSize: 14
+                                font.weight: Font.DemiBold
+                            }
+                            Text {
+                                width: parent.width
+                                text: "Size of the control center, system info and desktop widgets."
+                                color: Theme.textMuted
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        Row {
+                            id: scaleControl
+                            anchors.right: parent.right
+                            anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 14
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 42
+                                horizontalAlignment: Text.AlignRight
+                                text: Math.round(UiScale.factor * 100) + "%"
+                                color: Theme.textBright
+                                font.family: Theme.mono
+                                font.pixelSize: 13
+                            }
+
+                            Item {
+                                id: slider
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 200
+                                height: 22
+                                readonly property int hw: 16
+                                readonly property real frac: (UiScale.factor - UiScale.min) / (UiScale.max - UiScale.min)
+
+                                Rectangle {
+                                    id: track
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width
+                                    height: 5
+                                    radius: 2.5
+                                    color: Theme.trackBg
+
+                                    Rectangle {
+                                        height: parent.height
+                                        radius: parent.radius
+                                        width: handle.x + slider.hw / 2
+                                        color: Theme.accent
+                                    }
+
+                                    // tick at 100%
+                                    Rectangle {
+                                        width: 2
+                                        height: 9
+                                        radius: 1
+                                        color: Theme.glassBorder
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        x: (1.0 - UiScale.min) / (UiScale.max - UiScale.min)
+                                           * (slider.width - slider.hw) + slider.hw / 2 - 1
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: handle
+                                    width: slider.hw
+                                    height: slider.hw
+                                    radius: slider.hw / 2
+                                    color: Theme.textBright
+                                    border.color: Theme.thumbBorder
+                                    border.width: 1
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    x: slider.frac * (slider.width - slider.hw)
+                                    Behavior on x { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    function setFromX(mx) {
+                                        const f = (mx - slider.hw / 2) / (slider.width - slider.hw)
+                                        UiScale.setFactor(UiScale.min + Math.max(0, Math.min(1, f)) * (UiScale.max - UiScale.min))
+                                    }
+                                    onPressed: (e) => setFromX(e.x)
+                                    onPositionChanged: (e) => { if (pressed) setFromX(e.x) }
+                                    onWheel: (e) => UiScale.nudge(e.angleDelta.y > 0 ? UiScale.step : -UiScale.step)
+                                }
+                            }
+                        }
+                    }
+
                     // row 0 — keep laptop awake when lid shut
                     Rectangle {
                         width: parent.width
