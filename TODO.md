@@ -23,6 +23,11 @@
 ## Custom apps
 - [x] frostify — music player
 - [x] mica — file explorer
+- [ ] text / markdown editor (vim-style, live-preview, world80 themed)
+- [ ] browser (keyboard-driven, yazi-style modal nav)
+- [ ] image / gallery viewer (keyboard-driven, themed, pairs with mica)
+- [ ] pdf / document reader (vim keys, themed chrome)
+- [ ] system dashboard (full-window btop-style CPU/mem/net/procs, keyboard-driven)
 
 ## Theme settings & layout
 - [x] per-theme settings in the Super+Shift+/ sheet (clock/visualizer/sysinfo/lyrics toggles, ThemeSettings singleton, loaders unmount live)
