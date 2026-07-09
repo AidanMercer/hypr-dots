@@ -29,8 +29,16 @@ PanelWindow {
         left: bar.barEdge !== "right"
         right: bar.barEdge === "right" || !bar.vertical
     }
-    implicitHeight: Theme.barHeight
-    implicitWidth: Theme.barHeight
+    // a theme's bar.qml may declare `property real barScale` to reserve (and
+    // scale itself into) a taller/wider bar than the shared 44px default; any
+    // theme that doesn't stays exactly 1.0. Reads from the loaded item, so it
+    // settles one frame after mount — harmless at boot.
+    readonly property real barScale: {
+        const it = themeLoader.item
+        return (it && it.barScale && it.barScale > 0) ? it.barScale : 1.0
+    }
+    implicitHeight: Theme.barHeight * barScale
+    implicitWidth: Theme.barHeight * barScale
     color: "transparent"
 
     property string themeDir: ActiveTheme.dirFor(bar.screen ? bar.screen.name : "")
