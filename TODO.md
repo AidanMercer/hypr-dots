@@ -11,6 +11,8 @@
 
 ## Apps / widgets
 - [ ] custom file explorer
+- [ ] multi-mode launcher (calc, unit/currency convert, emoji, clipboard search, kill/switch window)
+- [ ] command palette (Super+P — fuzzy over theme apply, Shift+/ toggles, hypr actions)
 - [x] live lyrics (LyricsEngine in the shell + lyrics.qml per theme)
 - [x] better Super+M menu (popup.qml chrome slot)
 - [x] control center (bluetooth/network/display/sound/power tabs)
