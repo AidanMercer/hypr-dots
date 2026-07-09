@@ -147,6 +147,7 @@ PanelWindow {
                 { keys: ["Super", "← → ↑ ↓"],        desc: "Focus window" },
                 { keys: ["Super", "Q"],              desc: "Close window" },
                 { keys: ["Super", "F"],              desc: "Toggle float" },
+                { keys: ["Super", "Shift", "F"],     desc: "Fullscreen" },
                 { keys: ["Super", "Drag"],           desc: "Move window" },
                 { keys: ["Super", "Right-drag"],     desc: "Resize window" },
                 { keys: ["Super", "Shift", "← →"],   desc: "Send to monitor" },
