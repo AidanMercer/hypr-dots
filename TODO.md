@@ -46,7 +46,7 @@
 - [x] captive portal watcher (nmcli monitor → sticky card → open login page)
 - [x] sysinfo hover-pin (Super+., overlay layer)
 - [ ] notification center — history + do-not-disturb (notifs are transient right now)
-- [ ] battery-low + charge notifications (for the laptop)
+- [x] battery-low + charge notifications (BAT* poll in Notifications.qml → synthetic cards: low 20% / critical 10% while discharging, plug/unplug/full FYIs; `qs ipc call battery test …`)
 
 ## Misc
 - [ ] custom fastfetch

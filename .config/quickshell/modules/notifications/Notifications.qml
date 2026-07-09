@@ -132,6 +132,116 @@ Scope {
         function clear(): void { scope.onConnectivity("full") }
     }
 
+    // ── battery watcher ─────────────────────────────────────────────────
+    // Polls the first BAT* under power_supply (same source as the bar's
+    // ResourceBubble) and raises synthetic cards on the edges that matter: low
+    // / critical while discharging, plus a quick note when the charger goes in
+    // or out. The desktop (no battery) reads empty and this stays silent.
+    property int batLow: 20
+    property int batCrit: 10
+    property int batPercent: -1
+    property string batStatus: ""        // "", Charging, Discharging, Full, Not charging…
+    property bool warnedLow: false
+    property bool warnedCrit: false
+
+    function pushBattery(note) {
+        note.battery = true
+        note.appName = "Battery"
+        note.actions = note.actions || []
+        note.dismiss = () => {}
+        // a plug/unplug edge retires any stale low/critical warning card
+        if (note.retireWarn)
+            scope.popups = scope.popups.filter(x => x.batteryWarn !== true)
+        scope.popups = [note, ...scope.popups].slice(0, scope.maxVisible)
+    }
+
+    function onBattery(percent, status) {
+        if (percent < 0) { scope.batPercent = -1; scope.batStatus = ""; return }
+        const first = scope.batStatus === ""
+        const charging = status === "Charging" || status === "Full"
+        const wasCharging = scope.batStatus === "Charging" || scope.batStatus === "Full"
+
+        // plug/unplug edges — skipped on the very first read so a restart while
+        // plugged in doesn't announce "charging" out of nowhere
+        if (!first) {
+            if (status === "Charging" && scope.batStatus !== "Charging")
+                scope.pushBattery({ appIcon: "battery-charging", retireWarn: true,
+                    urgency: NotificationUrgency.Normal,
+                    summary: "Charging — " + percent + "%", body: "" })
+            else if (status === "Discharging" && wasCharging)
+                scope.pushBattery({ appIcon: "battery", retireWarn: true,
+                    urgency: NotificationUrgency.Normal,
+                    summary: "On battery — " + percent + "%", body: "" })
+            else if (status === "Full" && scope.batStatus !== "Full")
+                scope.pushBattery({ appIcon: "battery", retireWarn: true,
+                    urgency: NotificationUrgency.Normal,
+                    summary: "Battery full", body: "Unplug to spare the battery." })
+        }
+
+        // low / critical — only while actually running down
+        if (status === "Discharging") {
+            if (percent <= scope.batCrit && !scope.warnedCrit) {
+                scope.pushBattery({ appIcon: "battery-caution", batteryWarn: true, sticky: true,
+                    urgency: NotificationUrgency.Critical,
+                    summary: "Battery critically low — " + percent + "%",
+                    body: "Plug in now or the machine will suspend soon." })
+                scope.warnedCrit = true; scope.warnedLow = true
+            } else if (percent <= scope.batLow && !scope.warnedLow) {
+                scope.pushBattery({ appIcon: "battery-caution", batteryWarn: true, sticky: true,
+                    urgency: NotificationUrgency.Normal,
+                    summary: "Battery low — " + percent + "%",
+                    body: "Might want to grab the charger." })
+                scope.warnedLow = true
+            }
+        }
+        // clear the latches once we recover or plug in (a few % of hysteresis so
+        // a value hovering on the line doesn't re-fire every poll)
+        if (charging || percent >= scope.batLow + 5) scope.warnedLow = false
+        if (charging || percent >= scope.batCrit + 5) scope.warnedCrit = false
+
+        scope.batPercent = percent
+        scope.batStatus = status
+    }
+
+    Process {
+        id: batProc
+        command: ["sh", "-c", "for b in /sys/class/power_supply/BAT*; do [ -e \"$b/capacity\" ] && { cat \"$b/capacity\" \"$b/status\"; break; }; done"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = text.trim().split("\n")
+                const cap = parseInt(lines[0], 10)
+                if (lines[0] === "" || isNaN(cap)) { scope.onBattery(-1, ""); return }
+                scope.onBattery(cap, (lines[1] || "").trim())
+            }
+        }
+    }
+    Timer {
+        interval: 15000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: batProc.running = true
+    }
+
+    // preview/debug: `qs ipc call battery test low|crit|charge|unplug|full`
+    IpcHandler {
+        target: "battery"
+        function test(kind: string): void {
+            const p = scope.batPercent >= 0 ? scope.batPercent : 42
+            if (kind === "low") scope.pushBattery({ appIcon: "battery-caution", batteryWarn: true, sticky: true,
+                urgency: NotificationUrgency.Normal, summary: "Battery low — 18%", body: "Might want to grab the charger." })
+            else if (kind === "crit") scope.pushBattery({ appIcon: "battery-caution", batteryWarn: true, sticky: true,
+                urgency: NotificationUrgency.Critical, summary: "Battery critically low — 7%", body: "Plug in now or the machine will suspend soon." })
+            else if (kind === "charge") scope.pushBattery({ appIcon: "battery-charging", retireWarn: true,
+                urgency: NotificationUrgency.Normal, summary: "Charging — " + p + "%", body: "" })
+            else if (kind === "unplug") scope.pushBattery({ appIcon: "battery", retireWarn: true,
+                urgency: NotificationUrgency.Normal, summary: "On battery — " + p + "%", body: "" })
+            else if (kind === "full") scope.pushBattery({ appIcon: "battery", retireWarn: true,
+                urgency: NotificationUrgency.Normal, summary: "Battery full", body: "Unplug to spare the battery." })
+        }
+        function status(): string { return scope.batPercent + " " + scope.batStatus }
+    }
+
     NotificationServer {
         id: server
         keepOnReload: false
