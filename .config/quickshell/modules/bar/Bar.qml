@@ -81,6 +81,15 @@ PanelWindow {
         anchors.fill: parent
         onLoaded: if (item) item.barScreen = bar.screen
     }
+    // Same occluded handshake as ThemeClock/ThemeSysInfo: a theme bar that
+    // declares `property bool occluded` gets told when the session is locked, so
+    // it can park its stat pollers while the lock covers it. Opt-in per widget.
+    Binding {
+        target: themeLoader.item
+        property: "occluded"
+        value: ControlBus.sessionLocked
+        when: themeLoader.item !== null && themeLoader.item.hasOwnProperty("occluded")
+    }
     // setSource instead of a source binding so the widget gets `pal` as an
     // initial property — its bindings never see pal undefined. Called from the
     // exist-check collector (path/pal answer changed) and on nonce bumps.
