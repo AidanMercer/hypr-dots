@@ -38,10 +38,14 @@ PanelWindow {
         target: ControlBus
         function onTransitionFreeze() {
             if (ControlBus.sessionLocked) return
+            // a freshly-created view captures on its own (and warns if asked
+            // before its context is up) — only re-arm one that already exists,
+            // i.e. a re-freeze landing mid-wipe
+            const wasUp = stage.item !== null
             revealAnim.stop()
             root.progress = 0
             root.phase = 1
-            if (stage.item) stage.item.recapture()
+            if (wasUp && stage.item) stage.item.recapture()
             hardStop.restart()
         }
         function onTransitionReveal() {
@@ -141,10 +145,6 @@ PanelWindow {
                 textureSize: Qt.size(Math.max(1, Math.round(comp.width / 4)),
                                      Math.max(1, Math.round(comp.height / 4)))
             }
-
-            // live:false grabs a frame when the view is created; recapture()
-            // covers re-freezes while the loader is already up
-            Component.onCompleted: frozen.captureFrame()
         }
     }
 }
