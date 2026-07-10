@@ -38,7 +38,7 @@
 - [x] more custom wallpapers + push to github (10 themes, multi-wallpaper variants in the switcher)
 - [x] gallery theme switcher (Super+/, vertical wallpaper-variant rail)
 - [x] theme marketplace — browse + download themes from github (Super+/ 3rd tab)
-- [x] custom theme-switch transition (each monitor freezes on a frozen frame while the swap lands underneath, then a soft canted wipe hands over to the new theme — wallpaper + chrome + retints move as one; ThemeTransition.qml, dry-run via `qs ipc call themeTransition test`)
+- [ ] custom theme-switch transition (fade/wipe/morph between old→new wallpaper + chrome, not the bare qs restart flash)
 
 ## Slot parity (older themes missing newer slots)
 - [x] moon: lock.qml + notif.qml (breach-deck bare lock, HUD notif cards)
