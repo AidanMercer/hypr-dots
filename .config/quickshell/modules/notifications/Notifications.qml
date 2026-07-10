@@ -144,6 +144,27 @@ Scope {
     property bool warnedLow: false
     property bool warnedCrit: false
 
+    // the warned latches survive shell reloads/restarts through a runtime flag
+    // file — this tree hot-reloads on every edit and gets restarted constantly
+    // while ricing, and an in-memory latch re-fired the low card on each one
+    // (dismiss → straight back). Runtime dir = per-login lifetime, which is
+    // exactly the scope the latch wants.
+    FileView {
+        id: batWarnFile
+        path: {
+            const rt = Quickshell.env("XDG_RUNTIME_DIR")
+            return ((rt && String(rt).length) ? String(rt) : "/tmp") + "/qs-batwarn"
+        }
+        blockLoading: true
+        preload: true
+        printErrors: false
+        onLoaded: {
+            const t = text().trim()
+            scope.warnedLow = t === "low" || t === "crit"
+            scope.warnedCrit = t === "crit"
+        }
+    }
+
     function pushBattery(note) {
         note.battery = true
         note.appName = "Battery"
@@ -156,6 +177,7 @@ Scope {
         if (percent < 0) { scope.batPercent = -1; scope.batStatus = ""; return }
         const charging = status === "Charging" || status === "Full"
         const wasCharging = scope.batStatus === "Charging" || scope.batStatus === "Full"
+        const hadLow = scope.warnedLow, hadCrit = scope.warnedCrit
 
         // plugging in is the fix, so just clear any low/critical card silently.
         // no charging announcement — laptops flap Charging/Full/Not charging and
@@ -183,6 +205,10 @@ Scope {
         // a value hovering on the line doesn't re-fire every poll)
         if (charging || percent >= scope.batLow + 5) scope.warnedLow = false
         if (charging || percent >= scope.batCrit + 5) scope.warnedCrit = false
+
+        // mirror the latches only when they actually flip — not every 15s poll
+        if (scope.warnedLow !== hadLow || scope.warnedCrit !== hadCrit)
+            batWarnFile.setText(scope.warnedCrit ? "crit\n" : scope.warnedLow ? "low\n" : "\n")
 
         scope.batPercent = percent
         scope.batStatus = status
