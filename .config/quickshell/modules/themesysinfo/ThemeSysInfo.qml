@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import Quickshell.Hyprland
 import "../common"
 
 // Per-monitor desktop system-info widget owned by the *active theme*.
@@ -11,16 +12,19 @@ import "../common"
 // monitor is showing, walks up to that theme folder, and loads its sysinfo.qml if
 // present. No sysinfo.qml → nothing renders. Swap the wallpaper and it swaps too.
 //
-// Overlay layer (above every window, not just the wallpaper) so the readout
-// stays visible over whatever you're working in — still fully click-through
-// scenery (empty input mask), so it never steals a click from the window under it.
+// Hover/pin reveals live on the Overlay layer (above every window) so the
+// readout slides out over whatever you're working in — click-through, so it
+// never steals a click. Always-on readouts are desktop scenery, not something
+// to paint over your windows all day: a sysinfo.qml carrying the
+// `desktopSysinfo` marker (same idea as lock.qml's bareLock) sits on the
+// Bottom layer instead, under windows like the theme clock.
 PanelWindow {
     id: root
     required property var modelData
     screen: modelData
 
     WlrLayershell.namespace: "quickshell-themesysinfo"
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: onDesktop ? WlrLayer.Bottom : WlrLayer.Overlay
 
     anchors { top: true; bottom: true; left: true; right: true }
     exclusionMode: ExclusionMode.Ignore
@@ -34,6 +38,7 @@ PanelWindow {
     onSlotOnChanged: remount()
     property string infoPath: ""
     property bool wantsPal: false               // widget declares `property var pal`
+    property bool onDesktop: false              // widget carries `desktopSysinfo`
     property int reloadNonce: 0
 
     property ThemePalette pal: ThemePalette { themeDir: root.themeDir }
@@ -50,8 +55,12 @@ PanelWindow {
         stdout: StdioCollector {
             onStreamFinished: {
                 const parts = text.trim().split("\t")
-                const changed = parts[0] !== root.infoPath || (parts.length > 1) !== root.wantsPal
-                root.wantsPal = parts.length > 1
+                const pal = parts.includes("PAL")
+                const desk = parts.includes("DESK")
+                const changed = parts[0] !== root.infoPath
+                    || pal !== root.wantsPal || desk !== root.onDesktop
+                root.wantsPal = pal
+                root.onDesktop = desk
                 root.infoPath = parts[0]
                 if (changed) root.remount()
             }
@@ -65,7 +74,8 @@ PanelWindow {
     function rescan() {
         existProc.command = ["bash", "-c",
             'd="$1"; f="$d/sysinfo.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; ' +
-            'printf "%s" "$f"; grep -q "property var pal" "$f" && printf "\\tPAL"; true',
+            'printf "%s" "$f"; grep -q "property var pal" "$f" && printf "\\tPAL"; ' +
+            'grep -q "desktopSysinfo" "$f" && printf "\\tDESK"; true',
             "_", root.themeDir]
         existProc.running = true
     }
@@ -76,13 +86,20 @@ PanelWindow {
         anchors.fill: parent
     }
 
-    // Overlay layer floats above fullscreen windows, so only the lock hides
-    // this widget. Same contract as ThemeClock: declare `property bool
-    // occluded` to be told, and park pollers/animations while it's true.
+    // Same contract as ThemeClock: declare `property bool occluded` to be
+    // told, and park pollers/animations while it's true. On the Overlay layer
+    // only the lock hides this widget; desktop-marked widgets sit under
+    // windows, so a fullscreen window on this monitor covers them too.
+    readonly property var hyprMon: Hyprland.monitorFor(root.modelData)
+    readonly property bool occluded: ControlBus.sessionLocked
+        || (root.onDesktop && Hyprland.toplevels.values.some(t =>
+            t.wayland && t.wayland.fullscreen
+            && t.monitor === root.hyprMon
+            && t.workspace && t.workspace.active))
     Binding {
         target: widgetLoader.item
         property: "occluded"
-        value: ControlBus.sessionLocked
+        value: root.occluded
         when: widgetLoader.item !== null && widgetLoader.item.hasOwnProperty("occluded")
     }
     // setSource instead of a source binding so the widget gets `pal` as an
