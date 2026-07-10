@@ -225,17 +225,17 @@ PanelWindow {
     Timer {
         id: applyWatchdog
         interval: 6000
-        onTriggered: if (root.applying) { ControlBus.revealScreens(); root.closeMenu() }
+        onTriggered: if (root.applying) root.closeMenu()
     }
 
     // awww can't animate video, so an mp4 variant is applied as its extracted
     // still — loaders/lock/query keep working off it, VideoWall plays the real
     // video on top. Command built at call time, not bound (one-behind trap).
     //
-    // The switch itself hides under the transition: every monitor freezes on a
-    // frozen frame first (ControlBus → ThemeTransition), awww flips with no
-    // transition of its own since nobody can see it, and revealHold wipes to
-    // the finished desktop once the loaders have remounted. A second call
+    // The switch hides under the transition: every monitor freezes on a
+    // frozen frame (ControlBus → ThemeTransition, which starts wiping the
+    // moment its capture lands), and awww flips with no transition of its own
+    // since the swap runs behind the wipe's still-covered side. A second call
     // inside the freeze window just retargets pendingWall — freezeHold fires
     // once with whatever was last asked for.
     function applyWallpaper(wallpaper) {
@@ -251,7 +251,7 @@ PanelWindow {
         freezeHold.restart()
     }
     // let every monitor's capture land before anything visibly changes
-    Timer { id: freezeHold; interval: 180; onTriggered: root.kickApply() }
+    Timer { id: freezeHold; interval: 100; onTriggered: root.kickApply() }
     function kickApply() {
         const wallpaper = root.pendingWall
         if (wallpaper === "") return
@@ -276,7 +276,6 @@ PanelWindow {
         running: false
         onExited: (code, status) => {
             applyWatchdog.stop()
-            revealHold.restart()
             ControlBus.notifyWallpaperChanged()
             // remember this wallpaper so restore-wallpaper.sh brings it back at login
             if (root.lastAwwwTarget !== "")
@@ -290,11 +289,6 @@ PanelWindow {
         }
     }
     Timer { id: applyHold; interval: 200; onTriggered: root.closeMenu() }
-
-    // wipe once the swap has settled under the freeze: ActiveTheme's re-query
-    // and the widget loaders' remounts (incl. first-visit QML compiles, which
-    // stall the main thread and so also stall this timer) all fit inside this
-    Timer { id: revealHold; interval: 750; onTriggered: ControlBus.revealScreens() }
 
     Process { id: colorProc; running: false }
 

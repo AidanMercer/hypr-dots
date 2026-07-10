@@ -121,12 +121,8 @@ ShellRoot {
     // theme change involved: qs ipc call themeTransition test
     IpcHandler {
         target: "themeTransition"
-        function test(): void {
-            ControlBus.freezeScreens()
-            transitionTestHold.restart()
-        }
+        function test(): void { ControlBus.freezeScreens() }
     }
-    Timer { id: transitionTestHold; interval: 900; onTriggered: ControlBus.revealScreens() }
 
     // Keybind cheat sheet; toggled via `qs ipc call shortcuts toggle`
     // (Super+/ in hyprland.conf).

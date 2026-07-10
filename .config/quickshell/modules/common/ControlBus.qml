@@ -37,12 +37,11 @@ QtObject {
     function notifyThemeReload() { themeReloadRequested() }
 
     // Theme-switch transition. ThemeSwitcher freezes every monitor under a
-    // frozen frame (ThemeTransition.qml) before touching awww, swaps the theme
-    // out of sight, then reveals once the new widgets have mounted.
+    // frozen frame (ThemeTransition.qml) before touching awww; each cover
+    // starts wiping away on its own the moment its capture lands, while the
+    // swap races it underneath.
     signal transitionFreeze()
-    signal transitionReveal()
     function freezeScreens() { transitionFreeze() }
-    function revealScreens() { transitionReveal() }
 
     // Toggle the popup on a specific monitor (used by the StatusButton click).
     function toggle(name) {

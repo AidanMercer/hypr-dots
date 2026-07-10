@@ -51,11 +51,18 @@ PanelWindow {
             if (rearm && stage.item) stage.item.recapture()
             hardStop.restart()
         }
-        function onTransitionReveal() {
-            if (root.phase !== 1) return
-            root.phase = 2
-            revealAnim.restart()
-        }
+    }
+
+    // click → reveal, no settle wait: the wipe starts the instant the frozen
+    // frame is in hand while the swap races it underneath. The eased front
+    // has only opened a corner before awww and the loaders land behind the
+    // still-covered majority — and a heavy theme compile stalls this
+    // animation together with the swap, so the front can't outrun it.
+    readonly property bool covered: phase === 1 && stage.item !== null && stage.item.ready
+    onCoveredChanged: {
+        if (!covered) return
+        phase = 2
+        revealAnim.restart()
     }
 
     NumberAnimation {
@@ -63,15 +70,17 @@ PanelWindow {
         target: root
         property: "progress"
         from: 0; to: 1
-        duration: 850
+        duration: 1100
         easing.type: Easing.InOutCubic
         onFinished: root.phase = 0
     }
 
+    // screencopy never delivered (no wipe possible — the cover never mapped):
+    // fall back to idle so the machinery re-arms cleanly
     Timer {
         id: hardStop
         interval: 6000
-        onTriggered: if (root.phase === 1) { root.phase = 2; revealAnim.restart() }
+        onTriggered: if (root.phase === 1) { root.phase = 0; root.progress = 0 }
     }
 
     // instantiated once at startup, not on first freeze — building this tree
