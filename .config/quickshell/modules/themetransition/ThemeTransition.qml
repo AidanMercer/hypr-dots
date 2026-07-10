@@ -35,11 +35,15 @@ PanelWindow {
     // Until then the live desktop simply stays on screen, which is invisible.
     visible: phase !== 0 && stage.item !== null && stage.item.ready
 
-    // 0 idle · 1 frozen (textures loading) · 2 wiping · 3 fading off
+    // 0 idle · 1 frozen (grab beat + textures loading) · 2 wiping · 3 fading off
     property int phase: 0
     property real progress: 0       // 0 = frozen frame fully opaque, 1 = wiped
     property real coverOpacity: 1
+    property real grab: 0           // click acknowledgment: the old scene gives
+    property bool grabDone: false
     property string targetWall: ""  // what the wipe reveals ("" = live desktop)
+
+    readonly property bool mapped: phase !== 0 && stage.item !== null && stage.item.ready
 
     Connections {
         target: ControlBus
@@ -50,19 +54,39 @@ PanelWindow {
             // landing mid-wipe, where the context is already live, re-arms
             const rearm = root.phase >= 2
             revealSeq.stop()
+            grabAnim.stop()
             root.progress = 0
             root.coverOpacity = 1
+            root.grab = 0
+            root.grabDone = false
             root.targetWall = ControlBus.transitionTarget
             root.phase = 1
             if (rearm && stage.item) stage.item.recapture()
+            // a re-freeze is already mapped, so onMappedChanged won't fire
+            if (root.mapped) grabAnim.restart()
             hardStop.restart()
         }
     }
 
-    // the wipe starts once BOTH textures are in hand: the frozen frame and
-    // the incoming wallpaper it lands on. Starting on the frame alone would
-    // snap the image into the already-revealed strip when its decode lands.
-    readonly property bool covered: phase === 1
+    // the grab beat: the instant the cover is up, the old scene dims and
+    // swells a hair — immediate response to the click, riding exactly over
+    // the incoming image's decode so no motionless frame ever shows
+    onMappedChanged: if (mapped && phase === 1) grabAnim.restart()
+    NumberAnimation {
+        id: grabAnim
+        target: root
+        property: "grab"
+        from: 0; to: 1
+        duration: 220
+        easing.type: Easing.OutCubic
+        onFinished: root.grabDone = true
+    }
+
+    // the wipe launches out of the grab pose once BOTH textures are in hand:
+    // the frozen frame and the incoming wallpaper it lands on. Starting on
+    // the frame alone would snap the image into the revealed strip when its
+    // decode lands.
+    readonly property bool covered: phase === 1 && grabDone
         && stage.item !== null && stage.item.ready && stage.item.landReady
     onCoveredChanged: {
         if (!covered) return
@@ -89,7 +113,13 @@ PanelWindow {
             easing.type: Easing.InCubic
         }
         ScriptAction {
-            script: { root.phase = 0; root.progress = 0; root.coverOpacity = 1 }
+            script: {
+                root.phase = 0
+                root.progress = 0
+                root.coverOpacity = 1
+                root.grab = 0
+                root.grabDone = false
+            }
         }
     }
 
@@ -150,14 +180,16 @@ PanelWindow {
             Item {
                 id: held
                 anchors.fill: parent
-                scale: 1 + 0.012 * root.progress   // barely lifts off as it goes
+                // the grab pose flows straight into the wipe's lift — one
+                // continuous motion from click to peel
+                scale: 1 + 0.008 * root.grab + 0.012 * root.progress
                 layer.enabled: root.phase !== 0
                 layer.effect: MultiEffect {
                     maskEnabled: true
                     maskSource: maskSrc
                     maskThresholdMin: 0.5
                     maskSpreadAtMin: 0.5
-                    brightness: -0.05 * root.progress
+                    brightness: -0.06 * root.grab - 0.05 * root.progress
                 }
                 ScreencopyView {
                     id: frozen
