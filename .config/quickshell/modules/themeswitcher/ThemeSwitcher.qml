@@ -236,7 +236,7 @@ PanelWindow {
     // video on top. Command built at call time, not bound (one-behind trap).
     //
     // The transition: chrome bows out first (ControlBus.swapping fades every
-    // theme loader), then awww's own wipe morphs the wallpaper — it renders in
+    // theme loader), then awww's own grow morphs the wallpaper — it renders in
     // the wallpaper daemon's process, so the loader remounts and QML compiles
     // that stall THIS process can't hitch it — and settleHold brings the new
     // chrome back in once the dust has settled.
@@ -253,11 +253,11 @@ PanelWindow {
         ControlBus.swapping = true
         chromeHold.restart()
     }
-    // kick awww immediately: its spawn latency (~150-200ms to first wipe
+    // kick awww immediately: its spawn latency (~150-200ms to first transition
     // frame) fully overlaps the 140ms chrome fade-out, so the wallpaper is
     // already moving as the chrome finishes bowing out — zero dead air
     Timer { id: chromeHold; interval: 1; onTriggered: root.kickApply() }
-    // bring the chrome back while the wipe is still finishing its sweep — the
+    // bring the chrome back while the grow circle is still expanding — the
     // widgets emerge as part of the reveal, not as a second act after it. A
     // compile stall delays this timer right along with the work; a widget
     // that mounts even later still fades (loaders fade-from-zero on mount).
@@ -269,13 +269,12 @@ PanelWindow {
             applyProc.command = ["bash", "-c",
                 'v="$1"; s="${v%.mp4}.still.png"; ' +
                 '[ -f "$s" ] || ffmpeg -y -v error -i "$v" -frames:v 1 "$s"; ' +
-                'awww img --transition-type wipe --transition-angle 30 ' +
+                'awww img --transition-type grow ' +
                 '--transition-fps 60 --transition-duration 0.8 "$s"',
                 "_", wallpaper]
         } else {
             applyProc.command = ["awww", "img",
-                "--transition-type", "wipe",
-                "--transition-angle", "30",
+                "--transition-type", "grow",
                 "--transition-fps", "60",
                 "--transition-duration", "0.8",
                 wallpaper]
