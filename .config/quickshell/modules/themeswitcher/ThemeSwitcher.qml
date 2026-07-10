@@ -222,11 +222,22 @@ PanelWindow {
         applyWatchdog.restart()
         applyWallpaper(w.path)
     }
-    Timer { id: applyWatchdog; interval: 6000; onTriggered: if (root.applying) root.closeMenu() }
+    Timer {
+        id: applyWatchdog
+        interval: 6000
+        onTriggered: if (root.applying) { ControlBus.revealScreens(); root.closeMenu() }
+    }
 
     // awww can't animate video, so an mp4 variant is applied as its extracted
     // still — loaders/lock/query keep working off it, VideoWall plays the real
     // video on top. Command built at call time, not bound (one-behind trap).
+    //
+    // The switch itself hides under the transition: every monitor freezes on a
+    // frozen frame first (ControlBus → ThemeTransition), awww flips with no
+    // transition of its own since nobody can see it, and revealHold wipes to
+    // the finished desktop once the loaders have remounted. A second call
+    // inside the freeze window just retargets pendingWall — freezeHold fires
+    // once with whatever was last asked for.
     function applyWallpaper(wallpaper) {
         if (!wallpaper) return
         if (applyProc.running) return   // don't clobber pendingThemeDir mid-flight
@@ -235,29 +246,37 @@ PanelWindow {
         // restores this wallpaper instead of a hardcoded file
         root.lastAwwwTarget = wallpaper.endsWith(".mp4")
             ? wallpaper.replace(/\.mp4$/, ".still.png") : wallpaper
+        root.pendingWall = wallpaper
+        ControlBus.freezeScreens()
+        freezeHold.restart()
+    }
+    // let every monitor's capture land before anything visibly changes
+    Timer { id: freezeHold; interval: 180; onTriggered: root.kickApply() }
+    function kickApply() {
+        const wallpaper = root.pendingWall
+        if (wallpaper === "") return
         if (wallpaper.endsWith(".mp4")) {
             applyProc.command = ["bash", "-c",
                 'v="$1"; s="${v%.mp4}.still.png"; ' +
                 '[ -f "$s" ] || ffmpeg -y -v error -i "$v" -frames:v 1 "$s"; ' +
-                'awww img --transition-type fade --transition-duration 0.7 "$s"',
+                'awww img --transition-type none "$s"',
                 "_", wallpaper]
         } else {
-            applyProc.command = ["awww", "img",
-                "--transition-type", "fade",
-                "--transition-duration", "0.7",
-                wallpaper]
+            applyProc.command = ["awww", "img", "--transition-type", "none", wallpaper]
         }
         applyProc.running = true
     }
 
     property string pendingThemeDir: ""
     property string lastAwwwTarget: ""
+    property string pendingWall: ""
 
     Process {
         id: applyProc
         running: false
         onExited: (code, status) => {
             applyWatchdog.stop()
+            revealHold.restart()
             ControlBus.notifyWallpaperChanged()
             // remember this wallpaper so restore-wallpaper.sh brings it back at login
             if (root.lastAwwwTarget !== "")
@@ -271,6 +290,11 @@ PanelWindow {
         }
     }
     Timer { id: applyHold; interval: 200; onTriggered: root.closeMenu() }
+
+    // wipe once the swap has settled under the freeze: ActiveTheme's re-query
+    // and the widget loaders' remounts (incl. first-visit QML compiles, which
+    // stall the main thread and so also stall this timer) all fit inside this
+    Timer { id: revealHold; interval: 750; onTriggered: ControlBus.revealScreens() }
 
     Process { id: colorProc; running: false }
 

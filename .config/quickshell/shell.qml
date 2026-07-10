@@ -12,6 +12,7 @@ import "modules/videowall"
 import "modules/themesysinfo"
 import "modules/themelyrics"
 import "modules/themeswitcher"
+import "modules/themetransition"
 import "modules/shortcuts"
 import "modules/osd"
 import "modules/lock"
@@ -107,6 +108,25 @@ ShellRoot {
     // Theme switcher overlay; toggled via `qs ipc call themeSwitcher toggle`
     // (Super+Shift+T in hyprland.conf).
     ThemeSwitcher {}
+
+    // Theme-switch cover: each monitor freezes on a frozen frame of itself
+    // while the switch lands underneath, then wipes to the new theme. Driven
+    // by ThemeSwitcher through ControlBus; unmapped and cost-free while idle.
+    Variants {
+        model: Quickshell.screens
+        ThemeTransition {}
+    }
+
+    // Dry-run the transition (freeze → wipe back to the same desktop), no
+    // theme change involved: qs ipc call themeTransition test
+    IpcHandler {
+        target: "themeTransition"
+        function test(): void {
+            ControlBus.freezeScreens()
+            transitionTestHold.restart()
+        }
+    }
+    Timer { id: transitionTestHold; interval: 900; onTriggered: ControlBus.revealScreens() }
 
     // Keybind cheat sheet; toggled via `qs ipc call shortcuts toggle`
     // (Super+/ in hyprland.conf).
