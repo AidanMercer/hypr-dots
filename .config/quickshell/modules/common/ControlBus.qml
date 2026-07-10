@@ -36,6 +36,13 @@ QtObject {
     signal themeReloadRequested()
     function notifyThemeReload() { themeReloadRequested() }
 
+    // True while a theme swap is in flight. Every theme loader fades its
+    // chrome out on this, awww's wallpaper transition plays on a bare desktop
+    // — it renders in the wallpaper daemon's process, so a QML compile stall
+    // here can't hitch it — and the freshly mounted chrome fades back in
+    // when this flips off.
+    property bool swapping: false
+
     // Toggle the popup on a specific monitor (used by the StatusButton click).
     function toggle(name) {
         openMonitor = (openMonitor === name) ? "" : name

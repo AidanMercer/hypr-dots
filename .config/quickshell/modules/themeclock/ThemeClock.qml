@@ -75,6 +75,12 @@ PanelWindow {
     Loader {
         id: widgetLoader
         anchors.fill: parent
+        // theme swap: bow out before awww's wallpaper wipe, fade back in
+        // once the new theme's widget has mounted
+        opacity: ControlBus.swapping ? 0 : 1
+        Behavior on opacity {
+            NumberAnimation { duration: ControlBus.swapping ? 140 : 300; easing.type: Easing.OutCubic }
+        }
     }
 
     // The lock or a fullscreen window hides the desktop entirely (same rule as

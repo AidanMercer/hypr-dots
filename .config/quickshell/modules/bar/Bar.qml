@@ -80,6 +80,12 @@ PanelWindow {
         id: themeLoader
         anchors.fill: parent
         onLoaded: if (item) item.barScreen = bar.screen
+        // theme swap: bow out before awww's wallpaper wipe, fade back in
+        // once the new theme's bar has mounted
+        opacity: ControlBus.swapping ? 0 : 1
+        Behavior on opacity {
+            NumberAnimation { duration: ControlBus.swapping ? 140 : 300; easing.type: Easing.OutCubic }
+        }
     }
     // Same occluded handshake as ThemeClock/ThemeSysInfo: a theme bar that
     // declares `property bool occluded` gets told when the session is locked, so
@@ -115,6 +121,10 @@ PanelWindow {
         anchors.fill: parent
         active: bar.checked && bar.barPath === ""
         sourceComponent: defaultContent
+        opacity: ControlBus.swapping ? 0 : 1
+        Behavior on opacity {
+            NumberAnimation { duration: ControlBus.swapping ? 140 : 300; easing.type: Easing.OutCubic }
+        }
     }
     Component {
         id: defaultContent

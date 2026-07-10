@@ -222,11 +222,24 @@ PanelWindow {
         applyWatchdog.restart()
         applyWallpaper(w.path)
     }
-    Timer { id: applyWatchdog; interval: 6000; onTriggered: if (root.applying) root.closeMenu() }
+    Timer {
+        id: applyWatchdog
+        interval: 6000
+        onTriggered: {
+            ControlBus.swapping = false   // a wedged awww must not strand bare chrome
+            if (root.applying) root.closeMenu()
+        }
+    }
 
     // awww can't animate video, so an mp4 variant is applied as its extracted
     // still — loaders/lock/query keep working off it, VideoWall plays the real
     // video on top. Command built at call time, not bound (one-behind trap).
+    //
+    // The transition: chrome bows out first (ControlBus.swapping fades every
+    // theme loader), then awww's own wipe morphs the wallpaper — it renders in
+    // the wallpaper daemon's process, so the loader remounts and QML compiles
+    // that stall THIS process can't hitch it — and settleHold brings the new
+    // chrome back in once the dust has settled.
     function applyWallpaper(wallpaper) {
         if (!wallpaper) return
         if (applyProc.running) return   // don't clobber pendingThemeDir mid-flight
@@ -235,16 +248,33 @@ PanelWindow {
         // restores this wallpaper instead of a hardcoded file
         root.lastAwwwTarget = wallpaper.endsWith(".mp4")
             ? wallpaper.replace(/\.mp4$/, ".still.png") : wallpaper
+        root.pendingWall = wallpaper
+        ControlBus.swapping = true
+        chromeHold.restart()
+    }
+    // kick awww near-instantly: its spawn latency (~200ms to first wipe frame)
+    // overlaps the 140ms chrome fade-out, so the wallpaper starts moving right
+    // as the chrome finishes bowing out — no dead air between the two
+    Timer { id: chromeHold; interval: 30; onTriggered: root.kickApply() }
+    // bring the chrome back once the wipe has landed and the loaders have
+    // remounted — a compile stall delays this timer right along with the work
+    Timer { id: settleHold; interval: 850; onTriggered: ControlBus.swapping = false }
+    function kickApply() {
+        const wallpaper = root.pendingWall
+        if (wallpaper === "") return
         if (wallpaper.endsWith(".mp4")) {
             applyProc.command = ["bash", "-c",
                 'v="$1"; s="${v%.mp4}.still.png"; ' +
                 '[ -f "$s" ] || ffmpeg -y -v error -i "$v" -frames:v 1 "$s"; ' +
-                'awww img --transition-type fade --transition-duration 0.7 "$s"',
+                'awww img --transition-type wipe --transition-angle 30 ' +
+                '--transition-fps 60 --transition-duration 0.8 "$s"',
                 "_", wallpaper]
         } else {
             applyProc.command = ["awww", "img",
-                "--transition-type", "fade",
-                "--transition-duration", "0.7",
+                "--transition-type", "wipe",
+                "--transition-angle", "30",
+                "--transition-fps", "60",
+                "--transition-duration", "0.8",
                 wallpaper]
         }
         applyProc.running = true
@@ -252,12 +282,14 @@ PanelWindow {
 
     property string pendingThemeDir: ""
     property string lastAwwwTarget: ""
+    property string pendingWall: ""
 
     Process {
         id: applyProc
         running: false
         onExited: (code, status) => {
             applyWatchdog.stop()
+            settleHold.restart()
             ControlBus.notifyWallpaperChanged()
             // remember this wallpaper so restore-wallpaper.sh brings it back at login
             if (root.lastAwwwTarget !== "")

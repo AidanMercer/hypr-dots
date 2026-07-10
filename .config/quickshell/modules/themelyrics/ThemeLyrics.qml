@@ -101,6 +101,12 @@ PanelWindow {
         id: lyricsLoader
         anchors.fill: parent
         onLoaded: if (item && item.hasOwnProperty("isPrimary")) item.isPrimary = root.isPrimary
+        // theme swap: bow out before awww's wallpaper wipe, fade back in
+        // once the new theme's widget has mounted
+        opacity: ControlBus.swapping ? 0 : 1
+        Behavior on opacity {
+            NumberAnimation { duration: ControlBus.swapping ? 140 : 300; easing.type: Easing.OutCubic }
+        }
     }
     // setSource instead of a source binding so the widget gets `pal`/`engine` as
     // initial properties — its bindings never see them undefined. Called from the

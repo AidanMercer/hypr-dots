@@ -82,5 +82,11 @@ PanelWindow {
         id: vo
         anchors.fill: parent
         fillMode: VideoOutput.PreserveAspectCrop
+        // theme swap: drop to the still underneath so awww's wipe morphs
+        // still→still, then the new video fades in over its own first frame
+        opacity: ControlBus.swapping ? 0 : 1
+        Behavior on opacity {
+            NumberAnimation { duration: ControlBus.swapping ? 140 : 300; easing.type: Easing.OutCubic }
+        }
     }
 }
