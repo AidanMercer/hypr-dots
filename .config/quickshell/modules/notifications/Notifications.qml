@@ -20,9 +20,13 @@ Scope {
     property var popups: []
     readonly property int maxVisible: 5
 
-    function remove(n) {
-        scope.popups = scope.popups.filter(x => x !== n)
-        if (n) n.dismiss()
+    // remove by index, not identity — synthetic JS-object cards (battery,
+    // portal) come out of the Repeater's modelData as copies, so `x !== n`
+    // matched nothing and the X just rebuilt the card
+    function removeAt(i) {
+        const n = scope.popups[i]
+        scope.popups = scope.popups.filter((x, xi) => xi !== i)
+        if (n && n.dismiss) n.dismiss()
     }
 
     // ── captive-portal watcher ──────────────────────────────────────────
@@ -353,6 +357,7 @@ Scope {
                 delegate: Rectangle {
                     id: card
                     required property var modelData
+                    required property int index
                     readonly property var chrome: win.chrome
                     readonly property int urgency: modelData.urgency
                     // synthetic notes (captive portal) can pin themselves open
@@ -408,7 +413,7 @@ Scope {
                         interval: card.urgency === NotificationUrgency.Low ? 1800 : 2200
                         running: !card.sticky && !cardHover.containsMouse
                         repeat: false
-                        onTriggered: scope.remove(card.modelData)
+                        onTriggered: scope.removeAt(card.index)
                     }
 
                     MouseArea {
@@ -478,7 +483,7 @@ Scope {
                                     anchors.margins: -6
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: scope.remove(card.modelData)
+                                    onClicked: scope.removeAt(card.index)
                                 }
                             }
                         }
@@ -546,7 +551,7 @@ Scope {
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             parent.modelData.invoke()
-                                            scope.remove(card.modelData)
+                                            scope.removeAt(card.index)
                                         }
                                     }
                                 }
