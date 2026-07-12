@@ -27,7 +27,7 @@
 - [ ] browser (keyboard-driven, yazi-style modal nav)
 - [ ] image / gallery viewer (keyboard-driven, themed, pairs with mica)
 - [ ] pdf / document reader (vim keys, themed chrome)
-- [ ] system dashboard (full-window btop-style CPU/mem/net/procs, keyboard-driven)
+- [x] system dashboard (pulse — full-window btop-style cpu/mem/net/disks/procs, keyboard-driven, Super+Escape, ~/dev/pulse)
 
 ## Theme settings & layout
 - [x] per-theme settings in the Super+Shift+/ sheet (clock/visualizer/sysinfo/lyrics toggles, ThemeSettings singleton, loaders unmount live)
