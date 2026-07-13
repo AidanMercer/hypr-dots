@@ -14,6 +14,11 @@ Item {
     id: root
     anchors.fill: parent
 
+    // set by ArchLogo: feed parked while locked/covered or nothing is playing
+    property bool occluded: false
+    property bool playing: true
+    readonly property bool feedOn: playing && !occluded
+
     readonly property int barCount: 40
     property var levels: []                      // raw cava frame, barCount values 0..1
     property var display: []                     // eased copy we actually draw
@@ -35,18 +40,20 @@ Item {
 
     Process {
         id: cava
-        running: true
+        running: root.feedOn
         command: ["cava", "-p", Qt.resolvedUrl("cava.conf").toString().replace("file://", "")]
         stdout: SplitParser {
             onRead: line => root.parseFrame(line)
         }
-        onRunningChanged: if (!running) cavaRestart.start()
+        onRunningChanged: if (root.feedOn && !running) cavaRestart.start()
     }
 
     Timer {
         id: cavaRestart
         interval: 2000
-        onTriggered: cava.running = true
+        // re-assign the binding, not `= true`, or one crash restart would strip
+        // the feed gate and leak the reader forever (same trick as AudioBus)
+        onTriggered: cava.running = Qt.binding(() => root.feedOn)
     }
 
     function parseFrame(line) {

@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import Quickshell.Io
 import "../common"
 
@@ -41,6 +42,29 @@ PanelWindow {
     property int reloadNonce: 0
 
     property ThemePalette pal: ThemePalette { themeDir: root.themeDir }
+
+    // Same handshake as ThemeClock/ThemeSysInfo, plus a playing gate: a cava.qml
+    // that declares `occluded`/`playing` gets its feed parked while the session is
+    // locked, a fullscreen window covers this monitor, or nothing is playing — so
+    // no resident cava readers and no repaints behind the lock.
+    readonly property var hyprMon: Hyprland.monitorFor(root.modelData)
+    readonly property bool occluded: ControlBus.sessionLocked
+        || Hyprland.toplevels.values.some(t =>
+            t.wayland && t.wayland.fullscreen
+            && t.monitor === root.hyprMon
+            && t.workspace && t.workspace.active)
+    Binding {
+        target: themeLoader.item
+        property: "occluded"
+        value: root.occluded
+        when: themeLoader.item !== null && themeLoader.item.hasOwnProperty("occluded")
+    }
+    Binding {
+        target: themeLoader.item
+        property: "playing"
+        value: AudioBus.playing
+        when: themeLoader.item !== null && themeLoader.item.hasOwnProperty("playing")
+    }
 
     // Encode each segment so theme names with spaces ("your name") survive.
     function fileUrl(p) {
@@ -110,7 +134,7 @@ PanelWindow {
     }
     Component {
         id: archComponent
-        ArchVisualizer {}
+        ArchVisualizer { occluded: root.occluded; playing: AudioBus.playing }
     }
 
     Component.onCompleted: rescan()

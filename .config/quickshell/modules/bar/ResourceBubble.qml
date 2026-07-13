@@ -67,7 +67,7 @@ Item {
     // ── one tick drives all reads ──
     Timer {
         interval: root.pollInterval
-        running: true
+        running: !ControlBus.sessionLocked
         repeat: true
         triggeredOnStart: true
         onTriggered: {
