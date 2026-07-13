@@ -57,12 +57,22 @@ noto-fonts-extra
 noto-fonts-emoji
 
 # media + net helpers
+#   cava      — audio capture for the visualizers (shell + every theme spawn it)
 #   ffmpeg    — video-wallpaper still extraction + marketplace catalog thumbs
 #   curl      — the Super+/ theme marketplace fetches the catalog + theme files
 #   libnotify — notify-send, used for the "update available" nudge
+cava
 ffmpeg
 curl
 libnotify
+
+# app suite runtime (the optional ~/dev apps from install.sh):
+#   pyside6        — mica, vellum, pulse, beryl all run on it
+#   qt6-webengine  — beryl's engine
+#   python-adblock — beryl's filter-list blocker (it runs without, blocker off)
+pyside6
+qt6-webengine
+python-adblock
 
 # authoring only (not needed to run the rice): jq is used by the themes repo's
 # build-catalog.sh to regenerate index.json. install it if you're building themes.

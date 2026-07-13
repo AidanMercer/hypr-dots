@@ -11,6 +11,7 @@
 # flags:  --no-packages   skip pacman/paru
 #         --no-theme      skip seeding a starter theme
 #         --no-frostify   skip the (optional) frostify app clone
+#         --no-apps       skip the (optional) app suite clones (mica/vellum/pulse/beryl)
 #         --yes           assume yes to every prompt (unattended)
 set -euo pipefail
 
@@ -20,10 +21,11 @@ THEMES_REPO="AidanMercer/themes"        # marketplace source (pinned)
 FROSTIFY_REPO="https://github.com/AidanMercer/frostify"
 STARTER_THEME="moon"                    # seeded so the desktop looks alive day one
 
-DO_PACKAGES=1 DO_THEME=1 DO_FROSTIFY=1 ASSUME_YES=0
+DO_PACKAGES=1 DO_THEME=1 DO_FROSTIFY=1 DO_APPS=1 ASSUME_YES=0
 for a in "$@"; do case "$a" in
   --no-packages) DO_PACKAGES=0 ;; --no-theme) DO_THEME=0 ;;
-  --no-frostify) DO_FROSTIFY=0 ;; --yes|-y) ASSUME_YES=1 ;;
+  --no-frostify) DO_FROSTIFY=0 ;; --no-apps) DO_APPS=0 ;;
+  --yes|-y) ASSUME_YES=1 ;;
   -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//;1d'; exit 0 ;;
   *) echo "unknown flag: $a" >&2; exit 1 ;;
 esac; done
@@ -48,7 +50,7 @@ choose() { # choose "prompt" "opt1" "opt2"... -> sets REPLY to the 1-based pick
 cat <<EOF
 
 ${c_hi}world80 installer${c_off}
-  Sets up: packages · config symlinks · per-machine files · themes · Frostify.
+  Sets up: packages · config symlinks · per-machine files · themes · Frostify · the app suite.
   ${c_dim}Backs up anything it replaces and asks before each big step. Ctrl-C anytime.${c_off}
 EOF
 
@@ -256,6 +258,26 @@ if [ "$DO_FROSTIFY" = 1 ] && [ ! -d "$HOME/frostify" ]; then
   fi
 fi
 
+# ── app suite (optional, separate repos behind the Super+E/N/B/Escape binds) ─
+# clone-only installs: each app is a wrapper script + a python package that runs
+# on the system pyside6 (already in packages.txt, with qt6-webengine for beryl).
+if [ "$DO_APPS" = 1 ]; then
+  say "App suite (optional)"
+  echo "  Theme-following companions, each its own repo under ~/dev:"
+  echo "    mica (files, Super+E) · vellum (editor, Super+N) ·"
+  echo "    pulse (system monitor, Super+Escape) · beryl (browser, Super+B)"
+  for app in mica vellum pulse beryl; do
+    if [ -d "$HOME/dev/$app" ]; then skip "$app (already at ~/dev/$app)"; continue; fi
+    if ask "install $app to ~/dev/$app?"; then
+      mkdir -p "$HOME/dev"
+      git clone --depth 1 "https://github.com/AidanMercer/$app" "$HOME/dev/$app" \
+        && ok "cloned ~/dev/$app" || warn "$app clone failed"
+    fi
+  done
+else
+  skip "app suite skipped (--no-apps)"
+fi
+
 # ── done ──────────────────────────────────────────────────────────────────
 say "Done"
 cat <<EOF
@@ -267,6 +289,7 @@ cat <<EOF
   theme on login (or a starter one if you seeded any).${c_off}
 
   Keys:  Super+/ this cheatsheet (+ Marketplace tab) · Super+Shift+T themes ·
-         Super+R launcher · Super+M control center
+         Super+R launcher · Super+M control center ·
+         Super+E files · Super+N editor · Super+B browser · Super+Escape monitor
 $( [ -d "${BACKUP_DIR}" ] && printf "\n  Backed-up originals are in %s\n" "$BACKUP_DIR" )
 EOF
