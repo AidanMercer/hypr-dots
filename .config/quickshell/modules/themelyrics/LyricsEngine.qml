@@ -231,6 +231,7 @@ QtObject {
         lyricsSynced = false
         lyricsLoaded = false
         loadedKey = ""
+        fetchFails = 0
         trackPalette = null
         artLoadedKey = ""
     }
@@ -278,7 +279,22 @@ QtObject {
             loadedKey = wantKey
         }
         fetchingKey = ""
+        // non-JSON means the fetch script itself died ("no lyrics" is still
+        // JSON) — back off instead of pump() re-firing it in a tight loop
+        if (d === null) {
+            fetchFails++
+            if (fetchFails < 3) fetchBackoff.restart()
+            return
+        }
+        fetchFails = 0
         pump()   // wantKey may have moved on while we were fetching
+    }
+
+    property int fetchFails: 0
+    property Timer _fetchBackoff: Timer {
+        id: fetchBackoff
+        interval: 15000; repeat: false
+        onTriggered: engine.pump()
     }
 
     // Coalesce the title-change + postTrackChanged signals into one fetch, by

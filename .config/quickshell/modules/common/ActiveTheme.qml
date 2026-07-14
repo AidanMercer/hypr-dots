@@ -47,6 +47,14 @@ QtObject {
     // then we keep the old map and keep retrying.
     function parse(text) {
         if (text.indexOf("__OK__") === -1) return
+        if (text.indexOf("__NOAWWW__") !== -1) {
+            // without the daemon every theme widget would just silently vanish —
+            // say why once instead of retrying forever
+            console.warn("[ActiveTheme] awww isn't installed — theme widgets can't resolve; pacman -S awww")
+            at.retriesLeft = 0
+            at.ready = true
+            return
+        }
         const lines = text.split("\n")
         const m = {}
         for (const screen of Quickshell.screens) {
@@ -67,7 +75,8 @@ QtObject {
 
     property Process _query: Process {
         id: queryProc
-        command: ["bash", "-c", 'printf "__OK__\\n"; awww query 2>/dev/null']
+        command: ["bash", "-c",
+            'printf "__OK__\\n"; if command -v awww >/dev/null; then awww query 2>/dev/null; else printf "__NOAWWW__\\n"; fi']
         stdout: StdioCollector { onStreamFinished: at.parse(text) }
     }
 

@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import Quickshell.Io
 import "../common"
 
@@ -98,12 +99,18 @@ PanelWindow {
         }
     }
     // Same occluded handshake as ThemeClock/ThemeSysInfo: a theme bar that
-    // declares `property bool occluded` gets told when the session is locked, so
-    // it can park its stat pollers while the lock covers it. Opt-in per widget.
+    // declares `property bool occluded` gets told when the lock or a fullscreen
+    // window on this monitor covers it, so it can park its stat pollers.
+    readonly property var hyprMon: Hyprland.monitorFor(bar.modelData)
+    readonly property bool occluded: ControlBus.sessionLocked
+        || Hyprland.toplevels.values.some(t =>
+            t.wayland && t.wayland.fullscreen
+            && t.monitor === bar.hyprMon
+            && t.workspace && t.workspace.active)
     Binding {
         target: themeLoader.item
         property: "occluded"
-        value: ControlBus.sessionLocked
+        value: bar.occluded
         when: themeLoader.item !== null && themeLoader.item.hasOwnProperty("occluded")
     }
     // setSource instead of a source binding so the widget gets `pal` as an
