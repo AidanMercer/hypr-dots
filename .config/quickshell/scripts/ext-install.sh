@@ -32,7 +32,6 @@ pulse|$H/dev/pulse|AidanMercer/pulse|pyside6|
 beryl|$H/dev/beryl|AidanMercer/beryl|pyside6 qt6-webengine python-adblock|
 cobalt|$H/dev/cobalt|AidanMercer/cobalt|pyside6 qt6-webengine libnotify|
 frostify|$H/frostify|AidanMercer/frostify|pyside6|python-spotipy
-glint|$H/dev/glint|AidanMercer/glint|pyside6 grim wl-clipboard libnotify|
 EOF
 }
 field() { table | grep "^$1|" | cut -d'|' -f"$2"; }

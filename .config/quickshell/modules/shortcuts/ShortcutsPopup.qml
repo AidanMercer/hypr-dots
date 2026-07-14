@@ -86,8 +86,7 @@ PanelWindow {
         { name: "pulse",    tagline: "btop-style system dashboard",                bind: ["Super", "Esc"], cheat: "System monitor (pulse)", icon: 0xF080 },
         { name: "beryl",    tagline: "private, vim-driven browser",                bind: ["Super", "B"],   cheat: "Beryl browser",          icon: 0xF0AC },
         { name: "cobalt",   tagline: "transparent, vim-driven Microsoft Teams",    bind: ["Super", "K"],   cheat: "Teams (cobalt)",         icon: 0xF086 },
-        { name: "frostify", tagline: "frosted Spotify now-playing",                bind: ["Super", "S"],   cheat: "Frostify",               icon: 0xF001 },
-        { name: "glint",    tagline: "freeze-frame screenshots + themed annotate", bind: ["Super", "Shift", "S"], cheat: "Screenshot (glint)", icon: 0xF030 }
+        { name: "frostify", tagline: "frosted Spotify now-playing",                bind: ["Super", "S"],   cheat: "Frostify",               icon: 0xF001 }
     ]
     property var extStatus: ({})        // name -> { installed, behind, setup, missing: [] }
     property bool extChecking: false
@@ -197,8 +196,7 @@ PanelWindow {
                 { keys: ["Super", "Shift", "T"], desc: "Themes" },
                 { keys: ["Super", "Shift", "R"], desc: "Restart shell" },
                 { keys: ["Super", "L"],          desc: "Lock screen" },
-                { keys: ["Super", "Shift", "S"], desc: "Screenshot (glint)" },
-                { keys: ["Print"],               desc: "Screenshot (glint)" },
+                { keys: ["Super", "Shift", "S"], desc: "Screenshot region" },
                 { keys: ["Super", "/"],          desc: "This sheet" },
                 { keys: ["Super", "Shift", "/"], desc: "Settings" },
                 { keys: ["Super", "."],          desc: "Pin system info" }
