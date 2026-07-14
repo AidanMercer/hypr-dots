@@ -68,6 +68,7 @@ PanelWindow {
         { name: "vellum",   tagline: "text & markdown editor",                     bind: ["Super", "N"],   cheat: "Editor (vellum)",        icon: 0xF040 },
         { name: "pulse",    tagline: "btop-style system dashboard",                bind: ["Super", "Esc"], cheat: "System monitor (pulse)", icon: 0xF080 },
         { name: "beryl",    tagline: "private, vim-driven browser",                bind: ["Super", "B"],   cheat: "Beryl browser",          icon: 0xF0AC },
+        { name: "cobalt",   tagline: "transparent, vim-driven Microsoft Teams",    bind: ["Super", "K"],   cheat: "Teams (cobalt)",         icon: 0xF086 },
         { name: "frostify", tagline: "frosted Spotify now-playing",                bind: ["Super", "S"],   cheat: "Frostify",               icon: 0xF001 }
     ]
     property var extStatus: ({})        // name -> { installed, behind, setup, missing: [] }
