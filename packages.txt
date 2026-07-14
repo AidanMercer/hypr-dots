@@ -59,7 +59,7 @@ noto-fonts-emoji
 
 # media + net helpers
 #   cava      — audio capture for the visualizers (shell + every theme spawn it)
-#   ffmpeg    — video-wallpaper still extraction + marketplace catalog thumbs
+#   ffmpeg    — video-wallpaper stills, catalog thumbs, lyric album-art palette
 #   curl      — the Super+/ theme marketplace fetches the catalog + theme files
 #   libnotify — notify-send, used for the "update available" nudge
 cava

@@ -6,7 +6,8 @@ import Quickshell.Services.Mpris
 // The lyric ENGINE — every theme-independent part of the desktop lyric
 // visualizer: MPRIS player selection, the interpolated position clock, the
 // lyricvis-fetch.py fetch/cache handshake, live offset calibration, the cava
-// silence detector and the per-word karaoke timing model.
+// silence detector, the beat clock, chorus detection, the album-art palette
+// and the per-word karaoke timing model.
 //
 // ThemeLyrics owns one per monitor window and injects it into the active
 // theme's lyrics.qml as `engine` (widgets declare `property var engine` —
@@ -16,7 +17,12 @@ import Quickshell.Services.Mpris
 //   player, playing, estMs, lengthMs, fmt(ms)
 //   lines, lyricsLoaded, lyricsSynced
 //   activeIndex, tokens, tokenSpans, tokenState(i, est), lineDoneMs
-//   audioReady, audioSilent, audioPulse
+//   chorusMask, isChorus(i), inChorus — lexical chorus detection for staging
+//   nextLineStartMs, nextLineInMs, inInterlude — gap awareness / countdowns
+//   audioReady, audioSilent, audioPulse, audioEnergy, audioEnergyAvg, audioLift
+//   bpm, beatPhase, beatConfident (+ beat() signal) — cava-driven beat clock
+//   trackPalette, trackPaletteReady, trackPrimary/trackVivid/trackDeep,
+//     trackTint(base, amt) — album-art swatches for per-song color grading
 //   offsetMs (+ offsetNudged() signal for a calibration OSD)
 //   tuning: baseWordMs / perSyllableMs / holdCapMs — reset on every widget
 //   mount (resetTuning), so one theme's tweak can't leak into the next
@@ -41,7 +47,9 @@ QtObject {
     // held words off a silence flag frozen during some earlier instrumental gap.
     onActiveChanged: {
         audioSilent = false; audioReady = false; audioPulse = 0
+        audioEnergy = 0; audioEnergyAvg = 0
         _env = 0; _pulseEnv = 0; _lastAudioWall = 0; _quietSinceWall = 0
+        resetBeat()
         if (!active || !player) return
         hardAnchor()
         if (trackKey() !== loadedKey) { clearLyrics(); fetchDebounce.restart() }
@@ -141,6 +149,13 @@ QtObject {
         }
         if (lengthMs > 0) e = Math.max(0, Math.min(e, lengthMs))
         estMs = e
+        // beat phase rides the same 30fps tick; wall-clock based, since the
+        // onsets are wall-stamped off the live audio (already latency-true)
+        if (beatConfident && playing && audioReady) {
+            const k = (Date.now() - _beatAnchor) / _beatPeriod
+            beatPhase = k - Math.floor(k)
+            if (Math.floor(k) > _beatN) { _beatN = Math.floor(k); beat() }
+        } else if (beatPhase !== 0) beatPhase = 0
     }
 
     function fmt(ms) {
@@ -179,7 +194,8 @@ QtObject {
         function onPositionChanged()   { engine.reanchor() }
         // title fires early (metadata still settling) — reset the display now;
         // postTrackChanged fires once metadata is coherent and drives the fetch.
-        function onTrackTitleChanged() { engine.resetAnchor(); engine.clearLyrics(); fetchDebounce.restart() }
+        // The beat clock resets too: the next song's tempo is a fresh question.
+        function onTrackTitleChanged() { engine.resetAnchor(); engine.clearLyrics(); engine.resetBeat(); fetchDebounce.restart() }
         function onPostTrackChanged()  { fetchDebounce.restart() }
     }
 
@@ -209,17 +225,21 @@ QtObject {
 
     // Clear the displayed lyrics immediately on a track change so a stale line
     // from the previous song can never flash while the new fetch is in flight.
+    // The art palette clears with it — a new song must not wear the old tint.
     function clearLyrics() {
         lines = []
         lyricsSynced = false
         lyricsLoaded = false
         loadedKey = ""
+        trackPalette = null
+        artLoadedKey = ""
     }
 
     function requestLyrics() {
         if (!player || !player.trackTitle) return
         wantKey = trackKey()
         pump()
+        pumpArt()
     }
 
     // Start a fetch for wantKey unless we already have it or one's in flight.
@@ -276,6 +296,69 @@ QtObject {
         stdout: StdioCollector { onStreamFinished: engine.applyLyrics(text) }
     }
 
+    // ---- album-art palette ----------------------------------------------------
+    // lyricvis-art.py boils the current cover down to three swatches — dominant,
+    // most-vivid, darkest — cached per track like the lyrics. Fully fail-open:
+    // no art / no network / no ffmpeg -> trackPalette stays null, the convenience
+    // colors fall back to neutral grays, and trackTint() is the identity. Themes
+    // gate on trackPaletteReady (or just call trackTint, which is always safe).
+    property var trackPalette: null
+    property string artLoadedKey: ""
+    readonly property bool trackPaletteReady: trackPalette !== null && trackPalette.ok === true
+    readonly property color trackPrimary: trackPaletteReady ? trackPalette.c1 : "#8a8a8a"
+    readonly property color trackVivid:   trackPaletteReady ? trackPalette.c2 : "#8a8a8a"
+    readonly property color trackDeep:    trackPaletteReady ? trackPalette.c3 : "#3a3a3a"
+
+    // blend a theme color toward the track's vivid swatch; amt 0..1
+    function trackTint(base, amt) {
+        if (!trackPaletteReady) return base
+        return Qt.rgba(base.r + (trackVivid.r - base.r) * amt,
+                       base.g + (trackVivid.g - base.g) * amt,
+                       base.b + (trackVivid.b - base.b) * amt,
+                       base.a)
+    }
+
+    function artUrlOf() {
+        if (!player) return ""
+        try { const m = player.metadata; return m ? (m["mpris:artUrl"] || "") : "" } catch (e) { return "" }
+    }
+
+    // same never-reassign-mid-flight discipline as pump(); applyArt ends with
+    // pumpArt() so a skip during an extraction isn't lost. artUrl can settle a
+    // beat after the title — postTrackChanged re-runs the debounce and we retry.
+    function pumpArt() {
+        if (!active || !player) return
+        if (artProc.running) return
+        if (wantKey === "" || wantKey === artLoadedKey) return
+        const u = artUrlOf()
+        if (u === "") return
+        artProc.command = [
+            "bash", "-c",
+            'exec python3 "$HOME/.config/quickshell/scripts/lyricvis-art.py" "$@"',
+            "bash",
+            "--id=" + wantKey,
+            "--url=" + u,
+        ]
+        artProc.running = true
+    }
+
+    function applyArt(text) {
+        let d = null
+        try { d = JSON.parse(text) } catch (e) { d = null }
+        // an ok:false answer still sets artLoadedKey — one attempt per track view,
+        // not a retry storm; the cache holds only good palettes so replays retry
+        if (d && d.reqId === wantKey) {
+            trackPalette = d
+            artLoadedKey = wantKey
+        }
+        pumpArt()
+    }
+
+    property Process _artProc: Process {
+        id: artProc
+        stdout: StdioCollector { onStreamFinished: engine.applyArt(text) }
+    }
+
     // ---- offset calibration (shared via shell.qml's lyricOffset IPC) ---------
     // shell.qml owns the live offset (one IPC handler, never duplicated) and writes
     // it to this state file; every per-monitor instance just WATCHES the file, so a
@@ -311,6 +394,14 @@ QtObject {
     property bool audioSilent: false
     property real audioPulse: 0
     property bool audioReady: false
+    // full-band envelope, published for the themes: audioEnergy is the live
+    // loudness (absolute, autosens off), audioEnergyAvg a ~4s rolling mean of
+    // the raw frames. audioLift is the ratio — >1.2 reads as a hot section /
+    // drop, <0.7 as a breakdown. All zero on non-primary screens (gate on
+    // audioReady, like audioPulse).
+    property real audioEnergy: 0
+    property real audioEnergyAvg: 0
+    readonly property real audioLift: audioEnergyAvg > 0.02 ? Math.min(3, audioEnergy / audioEnergyAvg) : 1
     property real _env: 0
     property real _pulseEnv: 0
     property real _lastAudioWall: 0
@@ -339,6 +430,19 @@ QtObject {
         _lastAudioWall = Date.now()
         audioReady = true
         const now = Date.now()
+        audioEnergy = _env
+        audioEnergyAvg += (inst - audioEnergyAvg) * 0.004
+        // beat onset: the raw bass jumping clear of its own slow average reads
+        // as a kick. Check against the average BEFORE folding this frame in,
+        // debounced to < 240 BPM so one kick can't double-fire.
+        if (bassInst > _bassAvg + 0.055 && bassInst > _bassAvg * 1.5
+                && now - _lastOnsetWall > 250) {
+            _lastOnsetWall = now
+            _onsets.push(now)
+            if (_onsets.length > 24) _onsets.shift()
+            _retime()
+        }
+        _bassAvg += (bassInst - _bassAvg) * 0.05
         if (_env < silenceEnter) {
             if (_quietSinceWall === 0) _quietSinceWall = now
             if (now - _quietSinceWall >= silenceDebounceMs) audioSilent = true
@@ -346,6 +450,58 @@ QtObject {
             _quietSinceWall = 0
             audioSilent = false
         }
+    }
+
+    // ---- beat clock: bass onsets -> tempo -> phase ---------------------------
+    // Inter-onset gaps folded into one tempo octave (80–160 BPM), medianed, and
+    // phase-anchored to the latest kick. beatPhase saws 0..1 across each beat
+    // (updates on the 30fps tick) and beat() fires on the wrap — themes quantize
+    // pops/pulses to it so motion lands ON the music instead of near it. Fail-
+    // open like the rest of the feed: no cava / no drums / inconsistent gaps ->
+    // beatConfident stays false and beatPhase rests at 0.
+    property real bpm: 0
+    property real beatPhase: 0
+    property bool beatConfident: false
+    signal beat()
+    property var _onsets: []
+    property real _bassAvg: 0
+    property real _lastOnsetWall: 0
+    property real _beatPeriod: 0
+    property real _beatAnchor: 0
+    property real _beatN: 0
+
+    function resetBeat() {
+        _onsets = []
+        beatConfident = false
+        beatPhase = 0
+        _bassAvg = 0
+        _lastOnsetWall = 0
+    }
+
+    function _retime() {
+        const o = _onsets
+        if (o.length < 5) { beatConfident = false; return }
+        let per = []
+        for (let i = 1; i < o.length; i++) {
+            let g = o[i] - o[i - 1]
+            if (g < 200 || g > 3000) continue      // dropouts / long rests
+            while (g < 375) g *= 2                 // fold into 80–160 BPM
+            while (g > 750) g /= 2
+            per.push(g)
+        }
+        if (per.length < 4) { beatConfident = false; return }
+        per.sort(function (a, b) { return a - b })
+        const med = per[per.length >> 1]
+        let sum = 0, n = 0
+        for (let i = 0; i < per.length; i++)
+            if (Math.abs(per[i] - med) < med * 0.12) { sum += per[i]; n++ }
+        // most gaps must agree with the median or this isn't a groove
+        if (n < Math.max(4, per.length * 0.6)) { beatConfident = false; return }
+        _beatPeriod = sum / n
+        bpm = Math.round(60000 / _beatPeriod)
+        _beatAnchor = o[o.length - 1]
+        _beatN = 0
+        beatConfident = true
     }
 
     property Process _audioCava: Process {
@@ -373,6 +529,7 @@ QtObject {
         onTriggered: {
             if (engine._lastAudioWall && Date.now() - engine._lastAudioWall > 1500) {
                 engine.audioReady = false; engine.audioPulse = 0; engine.audioSilent = false
+                engine.audioEnergy = 0; engine.beatConfident = false; engine.beatPhase = 0
             }
         }
     }
@@ -401,6 +558,68 @@ QtObject {
         // would collapse the span (then the line would snap through instantly)
         if (lines[i] && lengthMs > lines[i].t) return lengthMs
         return lines[i] ? lines[i].t + 4000 : 0
+    }
+
+    // ---- song structure: chorus detection -------------------------------------
+    // A line is chorus when its normalized text repeats elsewhere in the song AND
+    // it sits in a run of repeated lines (or is a many-times hook on its own).
+    // Purely lexical — a staging hint, not ground truth. Songs where nearly
+    // everything repeats get an all-false mask: no verse/chorus contrast to stage.
+    // NOTE for themes: reference `chorusMask` (not just isChorus()) in a binding
+    // that must re-evaluate when the lyrics land.
+    function _normLine(s) {
+        return (s || "").toLowerCase()
+            .replace(/[.,!?;:"“”‘’„«»()\[\]{}\-—–…~*]+/g, " ")
+            .replace(/\s+/g, " ").trim()
+    }
+    readonly property var chorusMask: {
+        const L = lines
+        if (!L || L.length < 6) return []
+        const counts = {}
+        const norms = new Array(L.length)
+        for (let i = 0; i < L.length; i++) {
+            const n = _normLine(L[i].text)
+            norms[i] = n
+            if (n.length >= 6) counts[n] = (counts[n] || 0) + 1
+        }
+        const rep = new Array(L.length)
+        for (let i = 0; i < L.length; i++)
+            rep[i] = norms[i].length >= 6 && counts[norms[i]] >= 2
+        const mask = new Array(L.length)
+        let total = 0
+        for (let i = 0; i < L.length; i++) {
+            mask[i] = rep[i] === true
+                && ((i > 0 && rep[i - 1]) || (i + 1 < L.length && rep[i + 1])
+                    || counts[norms[i]] >= 4)
+            if (mask[i]) total++
+        }
+        if (total === 0 || total > L.length * 0.7) return new Array(L.length).fill(false)
+        return mask
+    }
+    function isChorus(i) {
+        const m = chorusMask
+        return i >= 0 && i < m.length && m[i] === true
+    }
+    readonly property bool inChorus:
+        activeIndex >= 0 && activeIndex < chorusMask.length && chorusMask[activeIndex] === true
+
+    // ---- gap awareness: what's coming ------------------------------------------
+    // nextLineInMs counts down to the next vocal (also before the first line), so
+    // themes can stage a karaoke-style countdown. inInterlude flags a real
+    // instrumental break — current line done and > 4.5s of dead air (intro and
+    // outro included) — the theme's cue to recede and play something ambient.
+    readonly property real nextLineStartMs: {
+        const L = lines
+        const i = activeIndex + 1
+        return (L && i >= 0 && i < L.length) ? L[i].t : -1
+    }
+    readonly property real nextLineInMs:
+        nextLineStartMs >= 0 ? Math.max(0, nextLineStartMs - estMs) : -1
+    readonly property bool inInterlude: {
+        if (!lyricsSynced || lines.length === 0) return false
+        if (activeIndex < 0) return lines[0].t > 4500 && estMs < lines[0].t
+        const gapEnd = nextLineStartMs >= 0 ? nextLineStartMs : lengthMs
+        return estMs > lineDoneMs && (gapEnd - lineDoneMs) > 4500
     }
 
     // ---- token model: main vocal vs background adlib -------------------------
