@@ -18,6 +18,7 @@ hyprlock
 hypridle
 hyprshot
 cliphist
+wl-clipboard
 brightnessctl
 
 # audio
@@ -67,12 +68,18 @@ curl
 libnotify
 
 # app suite runtime (the optional ~/dev apps from install.sh):
-#   pyside6        — mica, vellum, pulse, beryl all run on it
-#   qt6-webengine  — beryl's engine
-#   python-adblock — beryl's filter-list blocker (it runs without, blocker off)
+#   pyside6          — mica, vellum, pulse, beryl all run on it
+#   qt6-webengine    — beryl's engine
+#   python-adblock   — beryl's filter-list blocker (it runs without, blocker off)
+#   ripgrep, poppler — mica's in-folder grep + pdf previews
+#   python-markdown, python-pygments — vellum's rich themed preview
 pyside6
 qt6-webengine
 python-adblock
+ripgrep
+poppler
+python-markdown
+python-pygments
 
 # authoring only (not needed to run the rice): jq is used by the themes repo's
 # build-catalog.sh to regenerate index.json. install it if you're building themes.
@@ -82,3 +89,8 @@ python-adblock
 paru
 zen-browser-bin
 bibata-cursor-theme-bin
+# app suite extras:
+#   xdg-desktop-portal-termfilechooser — mica as the system file picker
+#   python-spotipy                     — frostify's Spotify Web API client
+xdg-desktop-portal-termfilechooser
+python-spotipy
