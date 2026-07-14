@@ -12,6 +12,7 @@ import "modules/videowall"
 import "modules/themesysinfo"
 import "modules/themelyrics"
 import "modules/themeswitcher"
+import "modules/workspaceoverview"
 import "modules/shortcuts"
 import "modules/osd"
 import "modules/lock"
@@ -107,6 +108,10 @@ ShellRoot {
     // Theme switcher overlay; toggled via `qs ipc call themeSwitcher toggle`
     // (Super+Shift+T in hyprland.conf).
     ThemeSwitcher {}
+
+    // Workspace overview / radial exposé; toggled via `qs ipc call
+    // workspaceOverview toggle` (Super+Tab in hyprland.conf).
+    WorkspaceOverview {}
 
     // Keybind cheat sheet; toggled via `qs ipc call shortcuts toggle`
     // (Super+/ in hyprland.conf).
