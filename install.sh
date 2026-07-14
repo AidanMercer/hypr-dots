@@ -188,7 +188,7 @@ mkdir -p "$HOME/.config/themes"; ok "~/.config/themes ready"
 # palette floor — so seed its couple of files directly.
 if [ ! -f "$HOME/.config/themes/default/config.toml" ]; then
   mkdir -p "$HOME/.config/themes/default"; base_ok=1
-  for f in config.toml frostify.qml; do
+  for f in config.toml frostify.qml mica.qml vellum.qml; do
     curl -fsSL "https://raw.githubusercontent.com/$THEMES_REPO/master/default/$f" \
       -o "$HOME/.config/themes/default/$f" 2>/dev/null || base_ok=0
   done

@@ -44,8 +44,7 @@ qt5-wayland
 qt6-wayland
 qt6ct
 
-# files, fonts, terminal extras
-dolphin
+# files, fonts, terminal extras (mica is the file manager — see the app suite)
 fastfetch
 # fonts the shell + themes actually render with:
 #   nerd-fonts-symbols — the icon glyphs everywhere (Symbols Nerd Font)
