@@ -13,6 +13,7 @@ import "../common"
 // the bar. Glass by default, neon chamfer on cyber themes — or the active theme's
 // own card chrome when it ships a notif.qml (cardBg/cardBorder/cardRadius +
 // optional per-card backdrop Component, same slot grammar as popup.qml).
+// Also owns the history + do-not-disturb state and the center panel (Super+I).
 Scope {
     id: scope
 
@@ -28,6 +29,83 @@ Scope {
         scope.popups = scope.popups.filter((x, xi) => xi !== i)
         if (n && n.dismiss) n.dismiss()
     }
+
+    // ── history + do-not-disturb ────────────────────────────────────────
+    // Every card that comes through — dbus, battery, portal — is snapshotted
+    // into a plain list for the center panel. Live Notification objects die
+    // with their popup; the snapshots persist in the state file, so history
+    // rides out the constant restarts this tree gets while ricing. DND sends
+    // everything straight to history — only Critical still pops.
+    property var history: []
+    property bool dnd: false
+    readonly property int maxHistory: 60
+
+    function record(n) {
+        const snap = {
+            appName: String(n.appName || "Notification"),
+            appIcon: String(n.appIcon || ""),
+            summary: String(n.summary || ""),
+            body: String(n.body || "").slice(0, 500),
+            urgency: n.urgency === undefined ? NotificationUrgency.Normal : n.urgency,
+            ts: Date.now()
+        }
+        scope.history = [snap, ...scope.history].slice(0, scope.maxHistory)
+        scope.saveState()
+    }
+
+    // synthetic cards (battery, portal) enter here; dbus ones in onNotification
+    function push(note) {
+        scope.record(note)
+        if (scope.dnd && note.urgency !== NotificationUrgency.Critical) return
+        scope.popups = [note, ...scope.popups].slice(0, scope.maxVisible)
+    }
+
+    function setDnd(v) {
+        if (scope.dnd === v) return
+        scope.dnd = v
+        if (v) {
+            // going quiet dismisses whatever's up right now too
+            for (const x of scope.popups) if (x.dismiss) x.dismiss()
+            scope.popups = []
+        }
+        scope.saveState()
+    }
+
+    function removeHistoryAt(i) {
+        scope.history = scope.history.filter((x, xi) => xi !== i)
+        scope.saveState()
+    }
+    function clearHistory() { scope.history = []; scope.saveState() }
+
+    function saveState() {
+        historyFile.setText(JSON.stringify({ dnd: scope.dnd, items: scope.history }) + "\n")
+    }
+    FileView {
+        id: historyFile
+        path: Quickshell.stateDir + "/notif-center.json"
+        blockLoading: true
+        preload: true
+        printErrors: false
+        onLoaded: {
+            try {
+                const s = JSON.parse(text())
+                if (s && typeof s === "object") {
+                    scope.dnd = s.dnd === true
+                    if (Array.isArray(s.items)) scope.history = s.items
+                }
+            } catch (e) {}
+        }
+    }
+
+    IpcHandler {
+        target: "notifs"
+        function toggle(): void { center.toggle() }
+        function dnd(): string { scope.setDnd(!scope.dnd); return scope.dnd ? "on" : "off" }
+        function clear(): void { scope.clearHistory() }
+        function status(): string { return (scope.dnd ? "dnd" : "on") + " " + scope.history.length }
+    }
+
+    NotificationCenter { id: center; store: scope }
 
     // ── captive-portal watcher ──────────────────────────────────────────
     // NetworkManager already probes its check URI on every new connection
@@ -60,7 +138,7 @@ Scope {
                 }],
                 dismiss: () => {}
             }
-            scope.popups = [note, ...scope.popups].slice(0, scope.maxVisible)
+            scope.push(note)
         } else if (state === "full" || state === "none") {
             // signed in (or left the network) — retire every portal card
             if (scope.portalShowing)
@@ -174,7 +252,7 @@ Scope {
         note.appName = "Battery"
         note.actions = note.actions || []
         note.dismiss = () => {}
-        scope.popups = [note, ...scope.popups].slice(0, scope.maxVisible)
+        scope.push(note)
     }
 
     function onBattery(percent, status) {
@@ -261,6 +339,11 @@ Scope {
 
         onNotification: (n) => {
             n.tracked = true
+            scope.record(n)
+            if (scope.dnd && n.urgency !== NotificationUrgency.Critical) {
+                n.dismiss()   // straight to history
+                return
+            }
             const next = [n, ...scope.popups]
             scope.popups = next.slice(0, scope.maxVisible)
             // whatever fell off the end is still tracked in the server — dismiss
@@ -270,9 +353,61 @@ Scope {
         }
     }
 
+    // ── theme chrome: the theme's notif.qml when it ships one ──
+    // Scope-level so the popup stack and the center panel share one mount.
+    property string themeDir: {
+        const fm = Hyprland.focusedMonitor
+        return ActiveTheme.dirFor(fm ? fm.name : "")
+    }
+    property string chromePath: ""
+    property int chromeNonce: 0
+    readonly property var chrome: chromeLoader.item
+    property ThemePalette pal: ThemePalette { themeDir: scope.themeDir }
+
+    function fileUrl(p) {
+        return "file://" + p.split("/").map(encodeURIComponent).join("/")
+    }
+    Process {
+        id: chromeProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const p = text.trim()
+                if (p !== scope.chromePath) { scope.chromePath = p; scope.remountChrome() }
+            }
+        }
+    }
+    // command built at call time, not bound — the one-behind trap again
+    function rescanChrome() {
+        chromeProc.command = ["bash", "-c",
+            'd="$1"; f="$d/notif.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; printf "%s" "$f"',
+            "_", scope.themeDir]
+        chromeProc.running = true
+    }
+    onThemeDirChanged: rescanChrome()
+    function remountChrome() {
+        if (scope.chromePath === "") { chromeLoader.source = ""; return }
+        chromeLoader.setSource(scope.fileUrl(scope.chromePath) + "?v=" + scope.chromeNonce,
+                               { pal: scope.pal })
+    }
+    onChromeNonceChanged: remountChrome()
+    // non-visual provider object; the cards mount its backdrop themselves
+    Loader { id: chromeLoader }
+    FileView {
+        path: scope.chromePath
+        watchChanges: scope.chromePath !== ""
+        printErrors: false
+        onFileChanged: scope.chromeNonce++
+    }
+    Connections {
+        target: ControlBus
+        function onThemeReloadRequested() { scope.chromeNonce++; scope.rescanChrome() }
+    }
+    Component.onCompleted: rescanChrome()
+
     PanelWindow {
         id: win
-        visible: scope.popups.length > 0
+        // the center replaces the stack while it's up — no double top-right
+        visible: scope.popups.length > 0 && !center.open
 
         // ride along with whichever monitor has focus (no per-screen duplication)
         screen: {
@@ -298,53 +433,6 @@ Scope {
         implicitWidth: 360
         implicitHeight: Math.max(1, col.implicitHeight)
 
-        // ── theme chrome: the theme's notif.qml when it ships one ──
-        property string themeDir: ActiveTheme.dirFor(win.screen ? win.screen.name : "")
-        property string chromePath: ""
-        property int chromeNonce: 0
-        readonly property var chrome: chromeLoader.item
-        property ThemePalette pal: ThemePalette { themeDir: win.themeDir }
-
-        function fileUrl(p) {
-            return "file://" + p.split("/").map(encodeURIComponent).join("/")
-        }
-        Process {
-            id: chromeProc
-            stdout: StdioCollector {
-                onStreamFinished: {
-                    const p = text.trim()
-                    if (p !== win.chromePath) { win.chromePath = p; win.remountChrome() }
-                }
-            }
-        }
-        // command built at call time, not bound — the one-behind trap again
-        function rescanChrome() {
-            chromeProc.command = ["bash", "-c",
-                'd="$1"; f="$d/notif.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; printf "%s" "$f"',
-                "_", win.themeDir]
-            chromeProc.running = true
-        }
-        onThemeDirChanged: rescanChrome()
-        function remountChrome() {
-            if (win.chromePath === "") { chromeLoader.source = ""; return }
-            chromeLoader.setSource(win.fileUrl(win.chromePath) + "?v=" + win.chromeNonce,
-                                   { pal: win.pal })
-        }
-        onChromeNonceChanged: remountChrome()
-        // non-visual provider object; the cards mount its backdrop themselves
-        Loader { id: chromeLoader }
-        FileView {
-            path: win.chromePath
-            watchChanges: win.chromePath !== ""
-            printErrors: false
-            onFileChanged: win.chromeNonce++
-        }
-        Connections {
-            target: ControlBus
-            function onThemeReloadRequested() { win.chromeNonce++; win.rescanChrome() }
-        }
-        Component.onCompleted: rescanChrome()
-
         Column {
             id: col
             anchors.right: parent.right
@@ -358,7 +446,7 @@ Scope {
                     id: card
                     required property var modelData
                     required property int index
-                    readonly property var chrome: win.chrome
+                    readonly property var chrome: scope.chrome
                     readonly property int urgency: modelData.urgency
                     // synthetic notes (captive portal) can pin themselves open
                     readonly property bool sticky: urgency === NotificationUrgency.Critical

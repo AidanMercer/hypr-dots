@@ -59,7 +59,7 @@
 ## System / desktop polish
 - [x] captive portal watcher (nmcli monitor → sticky card → open login page)
 - [x] sysinfo hover-pin (Super+., overlay layer)
-- [ ] notification center — history + do-not-disturb (notifs are transient right now)
+- [x] notification center — history + do-not-disturb (Super+I drawer; every card snapshotted to a stateDir JSON, DND via Super+Shift+I/panel pill sends all but critical straight to history; per-theme panel chrome in each theme's notif.qml — panelBg/panelTitle/panelBackdrop slot props)
 - [x] battery-low notifications (BAT* poll in Notifications.qml → sticky cards: low 20% / critical 10% while discharging, latched; plugging in clears them silently — no charge spam; `qs ipc call battery test low|crit`)
 
 ## Misc

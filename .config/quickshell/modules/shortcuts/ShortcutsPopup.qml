@@ -174,6 +174,8 @@ PanelWindow {
             { title: "System", binds: [
                 { keys: ["Super", "M"],          desc: "Control center" },
                 { keys: ["Super", "V"],          desc: "Clipboard history" },
+                { keys: ["Super", "I"],          desc: "Notifications" },
+                { keys: ["Super", "Shift", "I"], desc: "Do not disturb" },
                 { keys: ["Super", "Shift", "T"], desc: "Themes" },
                 { keys: ["Super", "Shift", "R"], desc: "Restart shell" },
                 { keys: ["Super", "L"],          desc: "Lock screen" },

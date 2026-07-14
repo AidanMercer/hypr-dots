@@ -59,6 +59,7 @@ PanelWindow {
         a.push({ title: "Theme gallery",         cat: "Open",    run: () => root.ipc("themeSwitcher", "toggle") })
         a.push({ title: "App launcher",          cat: "Open",    run: () => root.ipc("launcher", "toggle") })
         a.push({ title: "Clipboard history",     cat: "Open",    run: () => root.ipc("clipboard", "toggle") })
+        a.push({ title: "Notification center",   cat: "Open",    run: () => root.ipc("notifs", "toggle") })
         a.push({ title: "Control center",        cat: "Open",    run: () => root.ipc("controlPopup", "toggle") })
         a.push({ title: "Keybind cheat sheet",   cat: "Open",    run: () => root.ipc("shortcuts", "toggle") })
         a.push({ title: "Settings",              cat: "Open",    run: () => root.ipc("shortcuts", "settings") })
@@ -66,6 +67,7 @@ PanelWindow {
         a.push({ title: "Extensions",            cat: "Open",    run: () => root.ipc("shortcuts", "extensions") })
 
         a.push({ title: "Toggle auto-lock",      cat: "Toggle",  run: () => root.ipc("shortcuts", "autolock") })
+        a.push({ title: "Toggle do not disturb", cat: "Toggle",  run: () => root.ipc("notifs", "dnd") })
         a.push({ title: "Pin system info",       cat: "Toggle",  run: () => root.ipc("sysinfo", "toggle") })
         a.push({ title: "Interface scale: reset",   cat: "Scale", run: () => root.ipc("uiScale", "reset") })
         a.push({ title: "Interface scale: larger",  cat: "Scale", run: () => root.ipc("uiScale", "nudge", "0.05") })
