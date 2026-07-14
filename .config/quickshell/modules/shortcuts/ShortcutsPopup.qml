@@ -52,10 +52,27 @@ PanelWindow {
     property bool mktLoading: false
     property string mktError: ""
     property var mktInstalled: ({})     // name -> true (dirs present in ~/.config/themes)
+    property var mktVersions: ({})      // name -> .mkt-version content ("" = not a store install)
     property var mktProgress: ({})      // name -> {done,total} while downloading
     property string mktBusy: ""         // the one theme downloading right now
     property int mktRow: 0              // keyboard cursor within the store list
     property string mktArmedRemove: ""  // theme name whose removal is armed (confirm)
+
+    // a store install remembers the theme's catalog rev in .mkt-version; when
+    // the catalog moves past it, that's an update. themes without the stamp
+    // (this machine's own git checkout, hand-made folders) never show one —
+    // "updating" those from GitHub could overwrite newer local work
+    function hasUpdate(t) {
+        if (!t || !t.rev || root.mktInstalled[t.name] !== true) return false
+        const v = root.mktVersions[t.name] || ""
+        return v !== "" && v !== t.rev
+    }
+    readonly property int mktBehindTotal: {
+        let n = 0
+        for (const t of mktThemes) if (hasUpdate(t)) n++
+        return n
+    }
+    onMktBehindTotalChanged: syncBehindState()
 
     // ── extensions (the app suite) ──────────────────────────────────────
     // Install/update/remove the companion apps, marketplace-style. All the
@@ -340,15 +357,26 @@ PanelWindow {
         id: installedProc
         stdout: StdioCollector {
             onStreamFinished: {
-                const m = {}
-                for (const line of (text || "").split("\n")) { const s = line.trim(); if (s) m[s] = true }
+                const m = {}, vs = {}
+                for (const line of (text || "").split("\n")) {
+                    const s = line.trim()
+                    if (!s) continue
+                    const tab = s.indexOf("\t")
+                    const name = tab === -1 ? s : s.substring(0, tab)
+                    m[name] = true
+                    vs[name] = tab === -1 ? "" : s.substring(tab + 1).trim()
+                }
                 root.mktInstalled = m
+                root.mktVersions = vs
+                root.maybeNotifyUpdates()
             }
         }
     }
     function scanInstalled() {
         installedProc.command = ["bash", "-c",
-            'for d in "$HOME"/.config/themes/*/; do [ -d "$d" ] && basename "$d"; done; true']
+            'for d in "$HOME"/.config/themes/*/; do [ -d "$d" ] || continue; ' +
+            'n=$(basename "$d"); v=""; [ -f "$d/.mkt-version" ] && v=$(head -c 64 "$d/.mkt-version" | tr -d "[:space:]"); ' +
+            'printf "%s\\t%s\\n" "$n" "$v"; done; true']
         installedProc.running = true
     }
 
@@ -366,7 +394,7 @@ PanelWindow {
         root.mktProgress = start
         const paths = t.files.map(f => f.path)
         installProc.command = ["bash", root.mktScript, root.mktRepo, root.mktBranch,
-                               t.name, root.mktCommit].concat(paths)
+                               t.name, (t.rev || root.mktCommit)].concat(paths)
         installProc.running = true
     }
     function onInstallLine(line) {
@@ -376,11 +404,18 @@ PanelWindow {
             m[root.mktBusy] = { done: parseInt(p[1]), total: parseInt(p[2]) }
             root.mktProgress = m
         } else if (p[0] === "DONE") {
-            const inst = Object.assign({}, root.mktInstalled); inst[root.mktBusy] = true
+            const name = root.mktBusy
+            const inst = Object.assign({}, root.mktInstalled); inst[name] = true
             root.mktInstalled = inst
-            const m = Object.assign({}, root.mktProgress); delete m[root.mktBusy]
+            const m = Object.assign({}, root.mktProgress); delete m[name]
             root.mktProgress = m
             root.mktBusy = ""
+            root.scanInstalled()   // re-read .mkt-version stamps
+            // updating the theme that's on screen: remount its chrome live
+            if (root.isActive(name)) {
+                ThemeConfig.reload()
+                ControlBus.notifyThemeReload()
+            }
         } else if (p[0] === "ERR") {
             root.mktError = line.substring(4)
             const m = Object.assign({}, root.mktProgress); delete m[root.mktBusy]
@@ -420,7 +455,10 @@ PanelWindow {
     function mktActivate() {
         const t = root.mktThemes[root.mktRow]
         if (!t || root.mktBusy !== "") return
-        if (root.isInstalled(t.name)) {
+        if (root.hasUpdate(t)) {
+            root.mktArmedRemove = ""
+            root.installTheme(t)                              // update = same download
+        } else if (root.isInstalled(t.name)) {
             if (root.isActive(t.name)) return                 // can't remove what's live
             if (root.mktArmedRemove === t.name) root.uninstallTheme(t.name)
             else root.mktArmedRemove = t.name                 // first press arms it
@@ -618,24 +656,26 @@ PanelWindow {
         root.updState = (root.updBehind > 0 || root.extBehindTotal > 0) ? "behind" : "uptodate"
         root.maybeNotifyUpdates()
     }
-    // installed-app updates count toward the banner too; called whenever
-    // either side (engine check / extension status) lands a fresh result
+    // installed-app + store-theme updates count toward the banner too; called
+    // whenever any side (engine check / extension status / theme scan) lands
     function syncBehindState() {
-        if (root.updState === "uptodate" && root.extBehindTotal > 0) root.updState = "behind"
-        else if (root.updState === "behind" && root.updBehind === 0 && root.extBehindTotal === 0)
+        if (root.updState === "uptodate" && root.extBehindTotal + root.mktBehindTotal > 0) root.updState = "behind"
+        else if (root.updState === "behind" && root.updBehind === 0
+                 && root.extBehindTotal === 0 && root.mktBehindTotal === 0)
             root.updState = "uptodate"
     }
     // notify once when new updates appear (again only if more land later)
     function maybeNotifyUpdates() {
-        const total = root.updBehind + root.extBehindTotal
+        const total = root.updBehind + root.extBehindTotal + root.mktBehindTotal
         if (total > root.updNotifiedBehind) {
             root.updNotifiedBehind = total
             const bits = []
             if (root.updBehind > 0) bits.push(root.updBehind + " engine commit" + (root.updBehind > 1 ? "s" : ""))
             if (root.extBehindTotal > 0) bits.push(root.extBehindTotal + " app update" + (root.extBehindTotal > 1 ? "s" : ""))
+            if (root.mktBehindTotal > 0) bits.push(root.mktBehindTotal + " theme update" + (root.mktBehindTotal > 1 ? "s" : ""))
             Quickshell.execDetached(["notify-send", "-a", "world80",
                 "-i", "software-update-available", "world80 update available",
-                bits.join(" · ") + " — open Super+/ → Settings to update"])
+                bits.join(" · ") + " — open Super+/ to update"])
         } else if (total === 0) {
             root.updNotifiedBehind = 0     // reset after a successful update
         }
@@ -647,7 +687,7 @@ PanelWindow {
         interval: 120000
         running: true
         repeat: true
-        onTriggered: { root.checkUpdates(); root.extCheck(); interval = 6 * 3600 * 1000 }
+        onTriggered: { root.checkUpdates(); root.extCheck(); root.loadCatalog(); interval = 6 * 3600 * 1000 }
     }
 
     Process {
@@ -1095,6 +1135,7 @@ PanelWindow {
                                             const bits = []
                                             if (root.updBehind > 0) bits.push(root.updBehind + " engine update" + (root.updBehind > 1 ? "s" : ""))
                                             if (root.extBehindTotal > 0) bits.push(root.extBehindTotal + " app update" + (root.extBehindTotal > 1 ? "s" : ""))
+                                            if (root.mktBehindTotal > 0) bits.push(root.mktBehindTotal + " theme update" + (root.mktBehindTotal > 1 ? "s" : "") + " (Marketplace)")
                                             return bits.join(" · ") + " available"
                                         }
                                         case "pulling":  return "downloading updates…"
@@ -1557,6 +1598,7 @@ PanelWindow {
                             required property int index
                             readonly property var prog: root.progressFor(modelData.name)
                             readonly property bool installed: root.isInstalled(modelData.name)
+                            readonly property bool updatable: root.hasUpdate(modelData)
                             readonly property bool downloading: prog !== null
                             readonly property bool selected: root.mktRow === index
                             readonly property bool armed: root.mktArmedRemove === modelData.name
@@ -1744,11 +1786,29 @@ PanelWindow {
                                     }
                                 }
 
-                                // installed: apply + remove (remove hidden for the live theme)
+                                // installed: update (when the catalog moved on) + apply + remove
                                 Row {
                                     anchors.centerIn: parent
                                     spacing: 6
                                     visible: mrow.installed && !mrow.downloading && !mrow.armed
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        visible: mrow.updatable
+                                        readonly property bool blocked: root.mktBusy !== ""
+                                        width: upT.implicitWidth + 20; height: 30; radius: 8
+                                        color: upMa.containsMouse && !blocked ? Theme.accent
+                                             : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
+                                        border.color: Theme.accent; border.width: 1
+                                        opacity: blocked ? 0.5 : 1
+                                        Behavior on color { ColorAnimation { duration: 140 } }
+                                        Text { id: upT; anchors.centerIn: parent; text: "⭳ update"
+                                               color: Theme.textBright; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                        MouseArea {
+                                            id: upMa; anchors.fill: parent; hoverEnabled: true
+                                            cursorShape: parent.blocked ? Qt.ArrowCursor : Qt.PointingHandCursor
+                                            onClicked: if (!parent.blocked) { root.mktRow = mrow.index; root.installTheme(mrow.modelData) }
+                                        }
+                                    }
                                     Rectangle {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: apT.implicitWidth + 20; height: 30; radius: 8
@@ -1768,7 +1828,8 @@ PanelWindow {
                                     }
                                     Rectangle {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        visible: !root.isActive(mrow.modelData.name)
+                                        // yields its spot to the update pill; removal comes back after
+                                        visible: !root.isActive(mrow.modelData.name) && !mrow.updatable
                                         width: rmT.implicitWidth + 18; height: 30; radius: 8
                                         color: rmMa.containsMouse
                                                ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.16) : "transparent"

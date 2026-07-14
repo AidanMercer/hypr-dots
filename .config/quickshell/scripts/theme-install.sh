@@ -52,4 +52,14 @@ mv "$work" "$incoming"
 printf '%s\n' "$commit" > "$incoming/.mkt-version"
 rm -rf "$dest_root/$name"
 mv "$incoming" "$dest_root/$name"
+
+# the swap just deleted any locally-extracted video stills — regrow them now
+# so an update of the live theme doesn't leave awww/lock pointing at nothing
+if command -v ffmpeg >/dev/null; then
+  for v in "$dest_root/$name"/wallpaper*.mp4; do
+    [ -e "$v" ] || continue
+    s="${v%.mp4}.still.png"
+    [ -f "$s" ] || ffmpeg -y -v error -i "$v" -frames:v 1 "$s" </dev/null || true
+  done
+fi
 echo "DONE $dest_root/$name"
