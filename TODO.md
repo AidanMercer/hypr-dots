@@ -30,7 +30,7 @@
 - [x] text / markdown editor (vellum — PySide6+QML modal vim editor + live themed markdown preview; follows world80 like mica/frostify, ~/dev/vellum)
 - [x] browser (beryl — vim-driven QtWebEngine, hardened-private, multi-window, Super+B, ~/dev/beryl)
 - [ ] image / gallery viewer (keyboard-driven, themed, pairs with mica)
-- [ ] pdf / document reader (vim keys, themed chrome)
+- [x] pdf / document reader (vellum reads pdfs now — read-only reading view, / n N search w/ highlights, zoom, live reload on disk change)
 - [x] system dashboard (pulse — full-window btop-style cpu/mem/net/disks/procs, keyboard-driven, Super+Escape, ~/dev/pulse)
 - [x] extensions store (Super+/ 4th tab — install/update/remove the app suite via ext-install.sh; installs wire the desktop entry, cheat-sheet row and mica's picker portal; the Settings update pulls installed apps too)
 
