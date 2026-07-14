@@ -70,7 +70,7 @@ PanelWindow {
         { name: "beryl",    tagline: "private, vim-driven browser",                bind: ["Super", "B"],   cheat: "Beryl browser",          icon: 0xF0AC },
         { name: "frostify", tagline: "frosted Spotify now-playing",                bind: ["Super", "S"],   cheat: "Frostify",               icon: 0xF001 }
     ]
-    property var extStatus: ({})        // name -> { installed, behind, missing: [] }
+    property var extStatus: ({})        // name -> { installed, behind, setup, missing: [] }
     property bool extChecking: false
     property string extError: ""
     property string extBusy: ""         // the one app installing/updating right now
@@ -79,10 +79,15 @@ PanelWindow {
     property string extArmedRemove: ""
     readonly property int extBehindTotal: {
         let n = 0
-        for (const a of extApps) { const s = extStatus[a.name]; if (s && s.installed) n += s.behind }
+        for (const a of extApps) {
+            const s = extStatus[a.name]
+            if (!s || !s.installed) continue
+            n += s.behind
+            if (!s.setup) n += 1   // a pre-extensions clone: "update" = run its setup
+        }
         return n
     }
-    function extInfo(name) { return root.extStatus[name] ?? { installed: false, behind: 0, missing: [] } }
+    function extInfo(name) { return root.extStatus[name] ?? { installed: false, behind: 0, setup: true, missing: [] } }
 
     // ── self-update ─────────────────────────────────────────────────────
     // the engine is a git clone at ~/dotfiles; check if it's behind the remote
@@ -468,14 +473,15 @@ PanelWindow {
         const m = Object.assign({}, root.extStatus)
         for (const line of (text || "").split("\n")) {
             const p = line.trim().split(" ")
-            if (p[0] !== "APP" || p.length < 4) continue
+            if (p[0] !== "APP" || p.length < 5) continue
             const name = p[1], inst = p[2] === "1"
-            const prev = m[name] ?? { installed: false, behind: 0, missing: [] }
+            const prev = m[name] ?? { installed: false, behind: 0, setup: true, missing: [] }
             m[name] = {
                 installed: inst,
                 // scan can't know behind-counts — keep the last fetched value
                 behind: full ? (parseInt(p[3]) || 0) : (inst ? prev.behind : 0),
-                missing: inst ? p.slice(4) : []
+                setup: !inst || p[4] === "1",
+                missing: inst ? p.slice(5) : []
             }
         }
         root.extStatus = m
@@ -495,7 +501,7 @@ PanelWindow {
         root.extArmedRemove = ""
         const st = Object.assign({}, root.extStatus)
         const prev = root.extInfo(name)
-        st[name] = { installed: prev.installed, behind: prev.behind, missing: [] }
+        st[name] = { installed: prev.installed, behind: prev.behind, setup: prev.setup, missing: [] }
         root.extStatus = st       // setup re-reports missing deps if still there
         const m = Object.assign({}, root.extProgress)
         m[name] = { done: 0, total: 3 }
@@ -513,12 +519,12 @@ PanelWindow {
         } else if (p[0] === "DEPS") {
             const st = Object.assign({}, root.extStatus)
             const prev = root.extInfo(p[1])
-            st[p[1]] = { installed: prev.installed, behind: prev.behind, missing: p.slice(2) }
+            st[p[1]] = { installed: prev.installed, behind: prev.behind, setup: prev.setup, missing: p.slice(2) }
             root.extStatus = st
         } else if (p[0] === "DONE") {
             const st = Object.assign({}, root.extStatus)
             const prev = root.extInfo(p[1])
-            st[p[1]] = { installed: true, behind: 0, missing: prev.missing }
+            st[p[1]] = { installed: true, behind: 0, setup: true, missing: prev.missing }
             root.extStatus = st
             const m = Object.assign({}, root.extProgress); delete m[root.extBusy]
             root.extProgress = m
@@ -575,7 +581,7 @@ PanelWindow {
         const a = root.extApps[root.extRow]
         if (!a || root.extBusy !== "") return
         const s = root.extInfo(a.name)
-        if (!s.installed || s.behind > 0) root.extInstall(a.name)
+        if (!s.installed || s.behind > 0 || !s.setup) root.extInstall(a.name)
         else if (root.extArmedRemove === a.name) root.extRemove(a.name)
         else root.extArmedRemove = a.name        // first press arms the remove
     }
@@ -645,9 +651,10 @@ PanelWindow {
         id: updPullProc
         stdout: SplitParser { onRead: (line) => {
             if (line === "__ok__") {
-                // engine's in — now bring the installed apps along
-                if (root.extBehindTotal > 0) root.startExtUpdate()
-                else root.updState = "done"
+                // engine's in — now bring the installed apps along. always, not
+                // just when they have commits: their setup re-run is how
+                // desktop-entry/portal/dep fixes reach apps that are current
+                root.startExtUpdate()
             } else if (line === "__fail__") root.updState = "error"
         } }
     }
@@ -1998,7 +2005,7 @@ PanelWindow {
 
                                     Rectangle {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        visible: erow.st.behind > 0
+                                        visible: erow.st.behind > 0 || !erow.st.setup
                                         readonly property bool blocked: root.extBusy !== ""
                                         width: euT.implicitWidth + 20; height: 30; radius: 8
                                         color: euMa.containsMouse && !blocked ? Theme.accent : Theme.rowSelected
@@ -2006,7 +2013,7 @@ PanelWindow {
                                         opacity: blocked ? 0.5 : 1
                                         Behavior on color { ColorAnimation { duration: 140 } }
                                         Text { id: euT; anchors.centerIn: parent
-                                               text: "update · " + erow.st.behind
+                                               text: erow.st.behind > 0 ? "update · " + erow.st.behind : "set up"
                                                color: Theme.textBright; font.pixelSize: 12; font.weight: Font.DemiBold }
                                         MouseArea { id: euMa; anchors.fill: parent; hoverEnabled: true
                                             cursorShape: parent.blocked ? Qt.ArrowCursor : Qt.PointingHandCursor
@@ -2015,7 +2022,7 @@ PanelWindow {
 
                                     Text {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        visible: !erow.needsDeps && erow.st.behind === 0
+                                        visible: !erow.needsDeps && erow.st.behind === 0 && erow.st.setup
                                         text: "✓ installed"
                                         color: Theme.textMuted
                                         font.pixelSize: 11

@@ -2,13 +2,13 @@
 # ext-install.sh — install/update/remove the world80 app suite (the Extensions
 # tab in Super+/). stdout is line-oriented for the shell's SplitParser, same
 # idea as theme-install.sh:
-#   APP <name> <installed 0|1> <behind> [missing-pkg...]   (status/scan)
+#   APP <name> <installed 0|1> <behind> <setup 0|1> [missing-pkg...]   (status/scan)
 #   PROG <n> <total> <step>
 #   DEPS <name> <pkg...>
 #   DONE <name> | ALLDONE <count> | ERR <message>
 #
 # actions:
-#   scan               installed check only, no network (fast, for the cheat sheet)
+#   scan               installed/setup check only, no network (fast, for the cheat sheet)
 #   status             scan + git fetch for behind-counts + missing deps
 #   install <app>      clone + set up
 #   update <app>       ff-only pull + set up (setup is idempotent — this is how
@@ -76,16 +76,19 @@ setup_one() { # everything past the clone/pull; idempotent, needs no root
 }
 
 app_status() { # $1=app $2=with-network
-  local app="$1" dest up n miss; dest="$(field "$app" 2)"
-  if [ ! -d "$dest/.git" ]; then echo "APP $app 0 0"; return; fi
+  local app="$1" dest up n setup miss; dest="$(field "$app" 2)"
+  if [ ! -d "$dest/.git" ]; then echo "APP $app 0 0 0"; return; fi
   n=0
   if [ "$2" = 1 ]; then
     timeout 10 git -C "$dest" fetch --quiet 2>/dev/null
     up="$(git -C "$dest" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo "")"
     [ -n "$up" ] && n="$(git -C "$dest" rev-list --count "HEAD..$up" 2>/dev/null || echo 0)"
   fi
+  # a pre-extensions clone won't have a generated desktop entry — the UI
+  # offers "set up" for those, so upgraders get the entry/portal without a pull
+  setup=0; [ -f "$APPS_DIR/$app.desktop" ] && setup=1
   miss="$(missing_deps "$app")"
-  echo "APP $app 1 $n${miss:+ $miss}"
+  echo "APP $app 1 $n $setup${miss:+ $miss}"
 }
 
 install_one() {
