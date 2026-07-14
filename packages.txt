@@ -67,8 +67,8 @@ curl
 libnotify
 
 # app suite runtime (the optional ~/dev apps from install.sh):
-#   pyside6          — mica, vellum, pulse, beryl all run on it
-#   qt6-webengine    — beryl's engine
+#   pyside6          — mica, vellum, pulse, beryl, cobalt all run on it
+#   qt6-webengine    — beryl + cobalt's engine
 #   python-adblock   — beryl's filter-list blocker (it runs without, blocker off)
 #   ripgrep, poppler — mica's in-folder grep + pdf previews
 #   python-markdown, python-pygments — vellum's rich themed preview

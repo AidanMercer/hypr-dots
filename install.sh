@@ -271,8 +271,9 @@ if [ "$DO_APPS" = 1 ]; then
   say "App suite (optional)"
   echo "  Theme-following companions, each its own repo under ~/dev:"
   echo "    mica (files, Super+E) · vellum (editor, Super+N) ·"
-  echo "    pulse (system monitor, Super+Escape) · beryl (browser, Super+B)"
-  for app in mica vellum pulse beryl; do
+  echo "    pulse (system monitor, Super+Escape) · beryl (browser, Super+B) ·"
+  echo "    cobalt (teams, Super+K)"
+  for app in mica vellum pulse beryl cobalt; do
     if [ -d "$HOME/dev/$app" ]; then skip "$app (already at ~/dev/$app)"; continue; fi
     ask "install $app to ~/dev/$app?" && ext_install "$app"
   done

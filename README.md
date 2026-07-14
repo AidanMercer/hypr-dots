@@ -24,9 +24,10 @@ control center — all hand-written, no matugen, no auto-theming.
 - **A whole app suite wears the theme.** [mica](https://github.com/AidanMercer/mica)
   (file manager + system file picker, `Super+E`), [vellum](https://github.com/AidanMercer/vellum)
   (text/markdown editor, `Super+N`), [pulse](https://github.com/AidanMercer/pulse)
-  (system monitor, `Super+Escape`) and [beryl](https://github.com/AidanMercer/beryl)
-  (vim-driven private browser, `Super+B`) — separate repos, all keyboard-first, all
-  restyling live when you switch themes.
+  (system monitor, `Super+Escape`), [beryl](https://github.com/AidanMercer/beryl)
+  (vim-driven private browser, `Super+B`) and [cobalt](https://github.com/AidanMercer/cobalt)
+  (transparent, vim-driven Microsoft Teams, `Super+K`) — separate repos, all keyboard-first,
+  all restyling live when you switch themes.
 - **A theme marketplace, in the shell.** `Super+/` → **Marketplace**: browse every theme,
   see a preview + size, and download one into place with a click. No git, no manual copying.
 - **Vernissage theme switcher** (`Super+Shift+T`) — a gallery rail of your installed themes
@@ -79,6 +80,7 @@ displays in `~/.config/hypr/monitors.conf` if the default isn't right.
 | `Super+R` / `Super+M` / `Super+V` | launcher · control center · clipboard |
 | `Super+T` / `Super+W` / `Super+E` | terminal · browser · files (mica) |
 | `Super+B` / `Super+N` / `Super+Escape` | beryl browser · vellum editor · pulse monitor |
+| `Super+K` | cobalt (teams) |
 | `Super+S` | frostify now-playing |
 | `Super+L` / `Super+Shift+S` | lock · screenshot region |
 | `Super+1–5` · `Super+arrows` | workspaces · focus windows |

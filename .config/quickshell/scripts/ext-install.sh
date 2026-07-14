@@ -30,6 +30,7 @@ mica|$H/dev/mica|AidanMercer/mica|pyside6 ffmpeg ripgrep poppler|xdg-desktop-por
 vellum|$H/dev/vellum|AidanMercer/vellum|pyside6 python-markdown python-pygments|
 pulse|$H/dev/pulse|AidanMercer/pulse|pyside6|
 beryl|$H/dev/beryl|AidanMercer/beryl|pyside6 qt6-webengine python-adblock|
+cobalt|$H/dev/cobalt|AidanMercer/cobalt|pyside6 qt6-webengine libnotify|
 frostify|$H/frostify|AidanMercer/frostify|pyside6|python-spotipy
 EOF
 }
