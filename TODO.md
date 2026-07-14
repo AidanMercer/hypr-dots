@@ -8,6 +8,7 @@
 - [x] video wallpapers (mp4 per variant, VideoWall + lock map still→mp4 by suffix)
 - [x] video themes (avalon + vinland, bare lock, per-theme .qsb shaders)
 - [ ] themed sddm greeter (matches current wallpaper theme, boot→desktop cohesion)
+- [ ] GTK/qt5ct retint (extend theme-colors.sh so foreign apps follow the theme too)
 
 ## Apps / widgets
 - [x] custom file explorer (mica — PySide6+QML miller-columns manager, live world80 theming, Super+E)
@@ -18,6 +19,8 @@
 - [x] control center (bluetooth/network/display/sound/power tabs)
 - [x] media controls widget (MPRIS)
 - [ ] audio EQ (pipewire filter-chain presets, themed panel — control center sound tab or frostify)
+- [ ] themed screenshot + annotation (grim region-select overlay with arrows/blur/crop, satty replacement)
+- [ ] calendar / agenda popup on the clock (per-theme slot, month view)
 - [x] clipboard history popup (cliphist)
 - [x] volume / brightness OSD
 
