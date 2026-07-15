@@ -52,7 +52,7 @@
 - [x] lonely-train: sysinfo.qml (arrivals board)
 
 ## Motion / eye-candy (all togglable via Super+Shift+/)
-- [ ] workspace overview / zoom-out exposé (live window thumbnails, themed grid)
+- [x] workspace overview / zoom-out exposé (Super+Tab — focused window dead-center, every other window fanned around it on a ring as live ScreencopyView thumbnails; arrows move by direction, enter/click switches, ring shrinks past ~8 windows)
 - [ ] cursor parallax (subtle wallpaper depth-shift between workspaces)
 - [ ] theme-native ambient particles (avalon petals / vinland snow drifting on desktop, occlusion-gated)
 

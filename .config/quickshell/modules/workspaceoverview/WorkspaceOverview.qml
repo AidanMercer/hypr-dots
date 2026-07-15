@@ -78,6 +78,15 @@ PanelWindow {
     readonly property var activeWin: root.windows.find(w => w.active) ?? null
     readonly property var ringWins: root.windows.filter(w => !w.active)
 
+    // Once the ring gets busy the tiles would start colliding with each other,
+    // so shrink them to whatever arc each one actually gets. ~8 windows still
+    // ride at full size; past that they scale down instead of piling up.
+    readonly property real tileScale: {
+        const n = Math.max(1, root.ringWins.length)
+        const arc = 2 * Math.PI * root.ringRadius / n - 18   // width available per tile
+        return Math.max(0.5, Math.min(1, arc / root.tileW))
+    }
+
     // one flat list — center first, then the ring — so a single Repeater + one
     // delegate lays them all out. Each entry carries its rest offset from center.
     readonly property var tiles: root.layoutTiles()
@@ -90,7 +99,9 @@ PanelWindow {
         for (let i = 0; i < n; i++) {
             const ang = -Math.PI / 2 + i * 2 * Math.PI / n   // first tile at 12 o'clock
             out.push({
-                win: ring[i], w: tileW, h: tileH,
+                win: ring[i],
+                w: Math.round(tileW * root.tileScale),
+                h: Math.round(tileH * root.tileScale),
                 rx: Math.cos(ang) * ringRadius,
                 ry: Math.sin(ang) * ringRadius,
                 center: false,
@@ -158,6 +169,7 @@ PanelWindow {
     }
 
     function openMenu() {
+        if (!OverviewSettings.enabled) return
         const m = Hyprland.focusedMonitor
         targetScreen = m ? (Quickshell.screens.find(s => s.name === m.name) ?? null) : null
         closing = false
