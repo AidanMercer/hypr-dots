@@ -36,12 +36,14 @@ PanelWindow {
 
     // ---- geometry ----
     readonly property int tileW: 280
-    readonly property int tileH: 174
-    readonly property int centerW: 384
-    readonly property int centerH: 236
-    // how far the surrounding tiles sit from center — wide enough that the ring
-    // tiles clear the (larger) center tile at every angle
-    readonly property real ringRadius: Math.min(width, height) * 0.40
+    readonly property int tileH: 180
+    readonly property int centerW: 380
+    readonly property int centerH: 240
+    readonly property int footerH: 30
+    // how far the surrounding tiles sit from center. 0.38 is the sweet spot on a
+    // 16:10 panel: the diagonal tiles still clear the (bigger) center tile, and
+    // the 6-o'clock tile stays off the bottom edge.
+    readonly property real ringRadius: Math.min(width, height) * 0.38
 
     // keyboard/hover cursor: index into `tiles`. Shared by arrow-key nav and the
     // mouse, so there's only ever one highlight.
@@ -68,6 +70,8 @@ PanelWindow {
                 title: o.title || "",
                 cls: o.class || "",
                 active: o.focusHistoryID === 0,
+                // the hyprland toplevel's wayland handle — what ScreencopyView captures
+                wayland: t.wayland ?? null,
             }
         }).filter(w => w.address)   // freshly-opened windows arrive address-less
     }
@@ -274,39 +278,67 @@ PanelWindow {
                     color: Theme.glassHighlight
                 }
 
-                Column {
-                    anchors.centerIn: parent
-                    width: parent.width - 32
-                    spacing: tile.isCenter ? 14 : 10
+                // live thumbnail of the real window
+                ClippingRectangle {
+                    id: shot
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.margins: 8
+                    height: tile.height - root.footerH - 12
+                    radius: 9
+                    color: Theme.insetBg
+
+                    ScreencopyView {
+                        id: thumb
+                        anchors.centerIn: parent
+                        captureSource: tile.win.wayland ?? null
+                        // only stream while the overview is actually up
+                        live: root.open
+                        visible: hasContent
+                        // letterbox to the window's real aspect instead of stretching
+                        readonly property real ar: sourceSize.height > 0
+                            ? sourceSize.width / sourceSize.height : 16 / 9
+                        width: Math.min(parent.width, parent.height * ar)
+                        height: Math.min(parent.height, parent.width / ar)
+                    }
+
+                    // until the first frame lands (and for anything that won't
+                    // capture), fall back to the app icon
+                    IconImage {
+                        anchors.centerIn: parent
+                        width: tile.isCenter ? 56 : 40
+                        height: width
+                        source: root.iconForClass(tile.win.cls)
+                        visible: !thumb.hasContent
+                    }
+                }
+
+                Item {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 8
+                    height: root.footerH - 8
 
                     IconImage {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: tile.isCenter ? 68 : 44
-                        height: width
+                        id: footIcon
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 16
+                        height: 16
                         source: root.iconForClass(tile.win.cls)
                     }
 
                     Text {
-                        width: parent.width
-                        horizontalAlignment: Text.AlignHCenter
+                        anchors.left: footIcon.right
+                        anchors.leftMargin: 7
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
                         text: tile.win.title || tile.win.cls || "window"
                         textFormat: Text.PlainText
-                        color: tile.hot ? Theme.textBright : Theme.textPrimary
-                        font.pixelSize: tile.isCenter ? 16 : 13
-                        font.weight: tile.isCenter ? Font.Medium : Font.Normal
-                        elide: Text.ElideRight
-                        maximumLineCount: 1
-                    }
-
-                    Text {
-                        width: parent.width
-                        horizontalAlignment: Text.AlignHCenter
-                        visible: tile.win.cls.length > 0
-                        text: tile.win.cls
-                        textFormat: Text.PlainText
-                        color: Theme.textMuted
-                        font.family: Theme.mono
-                        font.pixelSize: 11
+                        color: tile.hot ? Theme.textBright : Theme.textSecondary
+                        font.pixelSize: tile.isCenter ? 13 : 12
                         elide: Text.ElideRight
                         maximumLineCount: 1
                     }
