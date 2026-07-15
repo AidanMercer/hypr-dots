@@ -43,7 +43,9 @@ PanelWindow {
     // tiles clear the (larger) center tile at every angle
     readonly property real ringRadius: Math.min(width, height) * 0.40
 
-    property int hovered: -1
+    // keyboard/hover cursor: index into `tiles`. Shared by arrow-key nav and the
+    // mouse, so there's only ever one highlight.
+    property int selected: -1
 
     // 0 closed, 1 open. Every tile eases its position out from the center and
     // scales up off this — that's the zoom-out pop. OutBack overshoots on the
@@ -106,6 +108,35 @@ PanelWindow {
         root.closeMenu()
     }
 
+    // Spatial arrow-key nav: the tiles sit at real angles, so an arrow moves to
+    // the tile that's physically in that direction from the current one. dx/dy
+    // is the pressed direction (up = 0,-1). We score candidates by how well they
+    // line up with it (cosine of the angle between) and prefer the nearer one.
+    function moveSel(dx, dy) {
+        const ts = root.tiles
+        if (ts.length === 0) return
+        const cur = (root.selected >= 0 && root.selected < ts.length) ? root.selected : 0
+        const c = ts[cur]
+        let best = -1, bestScore = -Infinity
+        for (let i = 0; i < ts.length; i++) {
+            if (i === cur) continue
+            const vx = ts[i].rx - c.rx
+            const vy = ts[i].ry - c.ry
+            const len = Math.hypot(vx, vy)
+            if (len < 1) continue
+            const align = (vx * dx + vy * dy) / len   // 1 = dead-on, <0 = behind
+            if (align < 0.35) continue                // ignore anything not roughly ahead
+            const score = align * 1000 - len          // aligned first, then closest
+            if (score > bestScore) { bestScore = score; best = i }
+        }
+        if (best >= 0) root.selected = best
+    }
+    function focusSelected() {
+        const ts = root.tiles
+        if (root.selected >= 0 && root.selected < ts.length)
+            root.focusWindow(ts[root.selected].win.address)
+    }
+
     // keep the ring fresh if windows open/close/move while the overview is up
     Connections {
         target: Hyprland
@@ -126,7 +157,7 @@ PanelWindow {
         const m = Hyprland.focusedMonitor
         targetScreen = m ? (Quickshell.screens.find(s => s.name === m.name) ?? null) : null
         closing = false
-        hovered = -1
+        selected = 0            // start on the center (current) window
         Hyprland.refreshToplevels()
         open = true
         Qt.callLater(() => keyCatcher.forceActiveFocus())
@@ -142,6 +173,16 @@ PanelWindow {
     IpcHandler {
         target: "workspaceOverview"
         function toggle(): void { root.open ? root.closeMenu() : root.openMenu() }
+        // same nav the arrow keys drive, exposed for the command palette / headless use
+        function nav(dir: string): void {
+            if (!root.open) return
+            if (dir === "left") root.moveSel(-1, 0)
+            else if (dir === "right") root.moveSel(1, 0)
+            else if (dir === "up") root.moveSel(0, -1)
+            else if (dir === "down") root.moveSel(0, 1)
+        }
+        function select(): void { if (root.open) root.focusSelected() }
+        function get(): string { return root.selected + "/" + root.tiles.length }
     }
 
     // darker than the theme switcher's gallery scrim — an exposé wants the
@@ -165,7 +206,15 @@ PanelWindow {
         anchors.fill: parent
         focus: true
         Keys.onPressed: (e) => {
-            if (e.key === Qt.Key_Escape) { root.closeMenu(); e.accepted = true }
+            switch (e.key) {
+            case Qt.Key_Escape: root.closeMenu(); e.accepted = true; break
+            case Qt.Key_Left:   root.moveSel(-1, 0); e.accepted = true; break
+            case Qt.Key_Right:  root.moveSel(1, 0);  e.accepted = true; break
+            case Qt.Key_Up:     root.moveSel(0, -1); e.accepted = true; break
+            case Qt.Key_Down:   root.moveSel(0, 1);  e.accepted = true; break
+            case Qt.Key_Return:
+            case Qt.Key_Enter:  root.focusSelected(); e.accepted = true; break
+            }
         }
     }
 
@@ -179,7 +228,7 @@ PanelWindow {
             required property int index
             readonly property var win: modelData.win
             readonly property bool isCenter: modelData.center
-            readonly property bool hot: root.hovered === index
+            readonly property bool hot: root.selected === index
 
             width: modelData.w
             height: modelData.h
@@ -267,8 +316,7 @@ PanelWindow {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onEntered: root.hovered = tile.index
-                    onExited: if (root.hovered === tile.index) root.hovered = -1
+                    onEntered: root.selected = tile.index
                     onClicked: root.focusWindow(tile.win.address)
                 }
             }
@@ -292,7 +340,7 @@ PanelWindow {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 72
         visible: root.windows.length > 0
-        text: "click a window to switch    esc to close"
+        text: "arrows to move    enter / click to switch    esc to close"
         color: Theme.textMuted
         font.family: Theme.mono
         font.pixelSize: 11
