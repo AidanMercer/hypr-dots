@@ -23,6 +23,24 @@ Rescue: hold ESC at boot for grub; `plymouth.enable=0` on the kernel line skips
 the splash; restore the .bak files then `mkinitcpio -P && grub-mkconfig -o
 /boot/grub/grub.cfg`.
 
+## systemd/getty@tty1.service.d/autologin.conf
+
+Silent autologin on tty1 — pairs with the fish autostart that execs Hyprland.
+`--autologin aidan` skips the password prompt, `--skip-login --nonewline
+--noissue` keep it from printing the login banner, so plymouth hands off to a
+clean tty. `~/.hushlogin` (already in place) suppresses the "Last login" line.
+
+Anyone who boots the SSD lands straight on the desktop — that's the deliberate
+trade (no disk encryption anyway; lock is Super-key/hypridle only).
+
+Apply:
+
+    sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+    sudo cp etc/systemd/getty@tty1.service.d/autologin.conf /etc/systemd/system/getty@tty1.service.d/
+
+Rescue: a broken tty1 doesn't take the others with it — Ctrl+Alt+F2 is a normal
+login; delete the drop-in and `systemctl daemon-reload` to revert.
+
 ## pam.d/hyprlock
 
 Custom PAM stack for hyprlock. Identical to the system `system-auth` auth block
