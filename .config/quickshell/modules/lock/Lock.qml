@@ -19,9 +19,6 @@ Scope {
 
     property bool locked: false
     onLockedChanged: ControlBus.sessionLocked = locked
-    // true only for the first qs of a fresh boot — lets the lock play a cold-boot
-    // intro and tells a real boot apart from a mid-session qs restart
-    property bool coldBoot: false
     property bool authBusy: false
     property bool authFailed: false
     property int resetNonce: 0
@@ -39,23 +36,6 @@ Scope {
         root.locked = false               // tears down the lock surfaces
     }
     Timer { id: unlockFallback; interval: 800; onTriggered: root.finishUnlock() }
-
-    // Autologin drops us straight into Hyprland, so the lock *is* the login gate.
-    // Lock on a real cold boot only: a marker in the runtime dir (wiped on reboot,
-    // kept across qs restarts) tells a fresh boot from a dev restart, so
-    // Super+Shift+R never re-locks the session.
-    Process {
-        running: true
-        command: ["bash", "-c",
-            'f="${XDG_RUNTIME_DIR:-/tmp}/qs-booted"; ' +
-            'if [ -e "$f" ]; then echo warm; else echo cold; : > "$f"; fi']
-        stdout: StdioCollector {
-            onStreamFinished: if (text.trim() === "cold") {
-                root.coldBoot = true
-                root.locked = true
-            }
-        }
-    }
 
     function tryAuth(pw) {
         if (authBusy || pw.length === 0) return
@@ -108,7 +88,6 @@ Scope {
             LockStage {
                 anchors.fill: parent
                 screenName: surface.screen ? surface.screen.name : ""
-                coldBoot: root.coldBoot
                 failed: root.authFailed
                 busy: root.authBusy
                 resetNonce: root.resetNonce
@@ -124,7 +103,6 @@ Scope {
     // plays the unlock exit and closes. (qs -p can't resolve ../common types, so
     // this replaces it for iterating on the transition.)
     property bool previewOpen: false
-    property bool previewColdBoot: false
     Loader {
         id: previewLoader
         active: root.previewOpen
@@ -140,9 +118,8 @@ Scope {
                 id: pstage
                 anchors.fill: parent
                 screenName: ""
-                coldBoot: root.previewColdBoot
                 onSubmitted: pstage.unlocking = true
-                onOutDone: { root.previewOpen = false; root.previewColdBoot = false }
+                onOutDone: root.previewOpen = false
             }
         }
     }
@@ -151,8 +128,7 @@ Scope {
         target: "lock"
         function lock(): void { root.locked = true }
         function isLocked(): bool { return root.locked }
-        function preview(): void { root.previewColdBoot = false; root.previewOpen = true }
-        function previewBoot(): void { root.previewColdBoot = true; root.previewOpen = true }
+        function preview(): void { root.previewOpen = true }
         function previewClose(): void { if (previewLoader.item) previewLoader.item.playExit() }
     }
 }

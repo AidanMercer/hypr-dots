@@ -18,6 +18,7 @@ import "modules/shortcuts"
 import "modules/osd"
 import "modules/lock"
 import "modules/notifications"
+import "modules/bootsplash"
 
 ShellRoot {
     id: shellRoot
@@ -100,6 +101,10 @@ ShellRoot {
     // Session lock — animated per-theme clock + PAM. Idle until triggered with
     // `qs ipc call lock lock` (hypridle lock_cmd / loginctl lock-session).
     Lock {}
+
+    // Cold-boot splash: veils the assembling desktop on a fresh boot, fades once
+    // the wallpaper is up. Replay with `qs ipc call bootSplash demo`.
+    BootSplash {}
 
     // Single app launcher window; toggled over IPC from the Super keybind.
     Launcher {}
