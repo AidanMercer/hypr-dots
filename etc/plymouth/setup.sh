@@ -30,6 +30,9 @@ grep -q '^HOOKS=.*plymouth' /etc/mkinitcpio.conf || { echo "HOOKS edit failed â€
 plymouth-set-default-theme world80
 mkinitcpio -P
 grub-mkconfig -o /boot/grub/grub.cfg
+# grub-mkconfig bakes "echo 'Loading Linux...'" lines into the entries and has
+# no knob for it â€” strip them so the hidden boot stays silent
+sed -i "/echo[[:space:]]*'Loading/d" /boot/grub/grub.cfg
 
 echo
 echo "== result =="

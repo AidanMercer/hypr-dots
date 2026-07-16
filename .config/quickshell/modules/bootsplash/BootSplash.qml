@@ -24,6 +24,14 @@ Scope {
         showing = true
         minHold.restart()
         maxHold.restart()
+        // the splash owns the wallpaper restore: firing it only once the veil
+        // exists guarantees the desktop dresses behind it, no sleep-racing.
+        // idempotent, so replaying via demo just re-sets the same wallpaper.
+        restoreWall.running = true
+    }
+    Process {
+        id: restoreWall
+        command: ["sh", Quickshell.env("HOME") + "/dotfiles/.config/hypr/restore-wallpaper.sh"]
     }
     function maybeFinish() {
         if (showing && !leaving && minHoldDone && wallReady) leaving = true

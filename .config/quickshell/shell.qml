@@ -23,6 +23,11 @@ import "modules/bootsplash"
 ShellRoot {
     id: shellRoot
 
+    // First declaration on purpose: on a cold boot its veil surface must commit
+    // before any other shell window, or the assembling desktop flashes through.
+    // Overlay layer keeps it above everything either way.
+    BootSplash {}
+
     // Construct the shared audio feed up front. Theme widgets consume it through
     // its mirror file (they can't import the singleton), so without this reference
     // nothing would ever instantiate it and cava would never start.
@@ -101,10 +106,6 @@ ShellRoot {
     // Session lock — animated per-theme clock + PAM. Idle until triggered with
     // `qs ipc call lock lock` (hypridle lock_cmd / loginctl lock-session).
     Lock {}
-
-    // Cold-boot splash: veils the assembling desktop on a fresh boot, fades once
-    // the wallpaper is up. Replay with `qs ipc call bootSplash demo`.
-    BootSplash {}
 
     // Single app launcher window; toggled over IPC from the Super keybind.
     Launcher {}
