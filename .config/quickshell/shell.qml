@@ -11,6 +11,7 @@ import "modules/themeclock"
 import "modules/videowall"
 import "modules/themesysinfo"
 import "modules/themelyrics"
+import "modules/themeparticles"
 import "modules/themeswitcher"
 import "modules/workspaceoverview"
 import "modules/shortcuts"
@@ -74,6 +75,13 @@ ShellRoot {
     Variants {
         model: Quickshell.screens
         ThemeLyrics {}
+    }
+
+    // Per-monitor ambient particle drift owned by the active theme: each theme
+    // folder can ship a particles.qml that loads only while its wallpaper is showing.
+    Variants {
+        model: Quickshell.screens
+        ThemeParticles {}
     }
 
     // Per-screen "identify" badge: a big white card naming the physical display

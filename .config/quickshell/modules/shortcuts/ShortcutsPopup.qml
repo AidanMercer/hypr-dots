@@ -286,7 +286,8 @@ PanelWindow {
                     { slot: "clock",   label: "Clock",       desc: "The theme's desktop clock.",              needsFile: true },
                     { slot: "cava",    label: "Visualizer",  desc: "The audio visualizer on the desktop.",    needsFile: false },
                     { slot: "sysinfo", label: "System info", desc: "The ambient system readout.",             needsFile: true },
-                    { slot: "lyrics",  label: "Lyrics",      desc: "Live desktop lyrics while music plays.",  needsFile: true }
+                    { slot: "lyrics",  label: "Lyrics",      desc: "Live desktop lyrics while music plays.",  needsFile: true },
+                    { slot: "particles", label: "Particles", desc: "Ambient drift over the wallpaper.",       needsFile: true }
                 ]
                 root.themeSlots = defs.filter(d => !d.needsFile || have.indexOf(d.slot) !== -1)
             }
@@ -297,7 +298,7 @@ PanelWindow {
         root.themeDirNow = ActiveTheme.dirFor(root.targetScreen ? root.targetScreen.name : "")
         if (root.themeDirNow === "") { root.themeSlots = []; return }
         slotProc.command = ["bash", "-c",
-            'd="$1"; for s in clock sysinfo cava lyrics; do [ -f "$d/$s.qml" ] && echo "$s"; done; true',
+            'd="$1"; for s in clock sysinfo cava lyrics particles; do [ -f "$d/$s.qml" ] && echo "$s"; done; true',
             "_", root.themeDirNow]
         slotProc.running = true
     }

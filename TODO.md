@@ -54,7 +54,7 @@
 ## Motion / eye-candy (all togglable via Super+Shift+/)
 - [x] workspace overview / zoom-out exposé (Super+Tab — focused window dead-center, every other window fanned around it on a ring as live ScreencopyView thumbnails; arrows move by direction, enter/click switches, ring shrinks past ~8 windows)
 - [ ] cursor parallax (subtle wallpaper depth-shift between workspaces)
-- [ ] theme-native ambient particles (avalon petals / vinland snow drifting on desktop, occlusion-gated)
+- [x] theme-native ambient particles (particles.qml slot, all 11 themes — avalon petals, vinland snow, moon data-static, lonely-train passing lights…; Bottom layer, occlusion-gated, Super+Shift+/ toggle)
 
 ## System / desktop polish
 - [x] captive portal watcher (nmcli monitor → sticky card → open login page)
