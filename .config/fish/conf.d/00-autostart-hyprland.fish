@@ -4,7 +4,9 @@ if status is-login
     and test -z "$WAYLAND_DISPLAY"
     and test -z "$DISPLAY"
     and test "$XDG_VTNR" = 1
-    # tty output silenced for the quiet boot — hyprland keeps its real log
-    # in $XDG_RUNTIME_DIR/hypr/<instance>/hyprland.log
-    exec Hyprland >/dev/null 2>&1
+    # start-hyprland (not raw Hyprland) — registers the session with
+    # systemd/dbus and skips the in-session warning banner. tty output
+    # silenced for the quiet boot — the real log lands in
+    # $XDG_RUNTIME_DIR/hypr/<instance>/hyprland.log
+    exec start-hyprland >/dev/null 2>&1
 end
