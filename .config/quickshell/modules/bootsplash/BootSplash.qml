@@ -12,7 +12,13 @@ import "../common"
 Scope {
     id: root
 
-    property bool showing: false
+    // starts true so the veil windows are created during instantiation — the
+    // very first surfaces committed (this module is declared first in shell.qml).
+    // waiting for onCompleted creates them AFTER every other shell window and
+    // the assembling desktop flashes through. warm restarts flip it off in
+    // onCompleted below, which runs before the first frame renders — nothing
+    // is ever presented.
+    property bool showing: true
     property bool leaving: false
     property bool minHoldDone: false
     property bool wallReady: false
@@ -57,6 +63,8 @@ Scope {
         if (cold) {
             bootMarker.setText("1\n")
             begin()
+        } else {
+            showing = false
         }
     }
 
