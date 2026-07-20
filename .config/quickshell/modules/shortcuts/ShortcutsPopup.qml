@@ -170,6 +170,7 @@ PanelWindow {
     readonly property var columns: {
         const st = root.extStatus
         const apps = [
+            { keys: ["Super", "R"],          desc: "Launcher" },
             { keys: ["Super", "T"],          desc: "Terminal" },
             { keys: ["Super", "W"],          desc: "Browser" }
         ]
@@ -190,6 +191,7 @@ PanelWindow {
         [
             { title: "System", binds: [
                 { keys: ["Super", "M"],          desc: "Control center" },
+                { keys: ["Super", "Tab"],        desc: "Window overview" },
                 { keys: ["Super", "V"],          desc: "Clipboard history" },
                 { keys: ["Super", "I"],          desc: "Notifications" },
                 { keys: ["Super", "Shift", "I"], desc: "Do not disturb" },

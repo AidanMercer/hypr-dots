@@ -120,7 +120,13 @@ PanelWindow {
     }
 
     // ---- window model ----
-    readonly property var windows: root.open ? root.buildWindows() : []
+    // liveWindows tracks hyprland while the exposé is up; `windows` is what the
+    // Repeater actually sees. On close we stop copying, so the last snapshot
+    // (same array, so no delegate churn) survives the collapse animation —
+    // closeHold clears it afterwards, which is what releases the captures.
+    readonly property var liveWindows: root.open ? root.buildWindows() : []
+    property var windows: []
+    onLiveWindowsChanged: if (root.open) root.windows = root.liveWindows
     function buildWindows() {
         return Hyprland.toplevels.values.map(t => {
             const o = t.lastIpcObject || {}
@@ -231,6 +237,7 @@ PanelWindow {
         if (!OverviewSettings.enabled) return
         const m = Hyprland.focusedMonitor
         targetScreen = m ? (Quickshell.screens.find(s => s.name === m.name) ?? null) : null
+        closeHold.stop()        // reopened mid-fade: don't let the old hold clear us
         closing = false
         selected = 0            // start on the center (current) window
         Hyprland.refreshToplevels()
@@ -243,7 +250,15 @@ PanelWindow {
         closing = true
         closeHold.restart()
     }
-    Timer { id: closeHold; interval: 300; onTriggered: root.closing = false }
+    Timer {
+        id: closeHold
+        interval: 300
+        onTriggered: {
+            if (root.open) return
+            root.closing = false
+            root.windows = []
+        }
+    }
 
     IpcHandler {
         target: "workspaceOverview"
