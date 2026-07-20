@@ -9,10 +9,11 @@ differ per machine, so apply them by hand with `sudo cp` after reviewing.
 Boot splash matching the quickshell cold-boot splash (same wordmark + sweeping
 line), so kernel splash → shell splash reads as one animation. `themes/world80/`
 is the plymouth theme; `setup.sh` installs it and makes the boot quiet:
-GRUB_TIMEOUT=1 + hidden (hold ESC for the menu), `splash` on the kernel line,
-`plymouth` hook after `systemd` in mkinitcpio HOOKS. It backs up grub config,
-mkinitcpio.conf and the initramfs with timestamped .bak files before touching
-anything, and every edit is guarded so rerunning is safe.
+GRUB_TIMEOUT=0 + hidden (hold ESC for the menu), `splash` on the kernel line,
+`plymouth` hook after `systemd`/`udev` in mkinitcpio HOOKS. It backs up grub
+config, mkinitcpio.conf and every initramfs with timestamped .bak files before
+touching anything, and every edit is guarded so rerunning is safe. The grub bits
+are skipped entirely if grub isn't the bootloader — you add `splash` yourself.
 
 Apply (review setup.sh first):
 
@@ -26,9 +27,12 @@ the splash; restore the .bak files then `mkinitcpio -P && grub-mkconfig -o
 ## systemd/getty@tty1.service.d/autologin.conf
 
 Silent autologin on tty1 — pairs with the fish autostart that execs Hyprland.
-`--autologin aidan` skips the password prompt, `--skip-login --nonewline
---noissue` keep it from printing the login banner, so plymouth hands off to a
-clean tty. `~/.hushlogin` (already in place) suppresses the "Last login" line.
+`--autologin` skips the password prompt, `--skip-login --nonewline --noissue`
+keep it from printing the login banner, so plymouth hands off to a clean tty.
+`~/.hushlogin` (already in place) suppresses the "Last login" line.
+
+The file ships with a `YOUR_USER` placeholder — substitute your own login when
+you copy it (the command below does), a plain `cp` gives you a broken tty1.
 
 Anyone who boots the SSD lands straight on the desktop — that's the deliberate
 trade (no disk encryption anyway; lock is Super-key/hypridle only).
@@ -36,7 +40,8 @@ trade (no disk encryption anyway; lock is Super-key/hypridle only).
 Apply:
 
     sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
-    sudo cp etc/systemd/getty@tty1.service.d/autologin.conf /etc/systemd/system/getty@tty1.service.d/
+    sed "s/YOUR_USER/$USER/" etc/systemd/getty@tty1.service.d/autologin.conf \
+      | sudo tee /etc/systemd/system/getty@tty1.service.d/autologin.conf
 
 Rescue: a broken tty1 doesn't take the others with it — Ctrl+Alt+F2 is a normal
 login; delete the drop-in and `systemctl daemon-reload` to revert.

@@ -12,6 +12,9 @@
 hyprland
 kitty
 fuzzel
+# fish is the login shell the quiet-boot chain hangs off — conf.d/00-autostart-
+# hyprland.fish is what execs the compositor on tty1
+fish
 awww
 quickshell
 hyprlock
@@ -32,7 +35,6 @@ wireplumber
 #   sudo systemctl enable --now NetworkManager.service
 #   sudo systemctl enable --now bluetooth.service
 networkmanager
-network-manager-applet
 bluez
 bluez-utils
 
@@ -43,6 +45,7 @@ polkit-kde-agent
 qt5-wayland
 qt6-wayland
 qt6ct
+kvantum
 
 # files, fonts, terminal extras (mica is the file manager — see the app suite)
 fastfetch
@@ -61,10 +64,13 @@ noto-fonts-emoji
 #   ffmpeg    — video-wallpaper still extraction + marketplace catalog thumbs
 #   curl      — the Super+/ theme marketplace fetches the catalog + theme files
 #   libnotify — notify-send, used for the "update available" nudge
+#   jq        — workspace-deep.sh (the Super+Ctrl/scroll workspace binds) and
+#               the installer's theme-catalog reads
 cava
 ffmpeg
 curl
 libnotify
+jq
 
 # app suite runtime (the optional ~/dev apps from install.sh):
 #   pyside6          — mica, vellum, pulse, beryl, cobalt all run on it
@@ -80,10 +86,6 @@ poppler
 python-markdown
 python-pygments
 
-# authoring only (not needed to run the rice): jq is used by the themes repo's
-# build-catalog.sh to regenerate index.json. install it if you're building themes.
-#   jq
-
 [aur]
 paru
 zen-browser-bin
@@ -93,3 +95,6 @@ bibata-cursor-theme-bin
 #   python-spotipy                     — frostify's Spotify Web API client
 xdg-desktop-portal-termfilechooser
 python-spotipy
+# what the Super+C / Super+G binds launch — drop the binds if you don't want them
+visual-studio-code-bin
+github-desktop-bin

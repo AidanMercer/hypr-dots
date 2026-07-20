@@ -80,8 +80,6 @@ if [ "$DO_PACKAGES" = 1 ]; then
   say "Packages (needs sudo)"
   mapfile -t repo_pkgs < <(pkgs_in_section repo)
   mapfile -t aur_pkgs  < <(pkgs_in_section aur)
-  # jq isn't in the run list, but the starter-theme seed below needs it
-  [ "$DO_THEME" = 1 ] && repo_pkgs+=(jq)
   if [ "${#repo_pkgs[@]}" -gt 0 ]; then
     say "  repo: ${repo_pkgs[*]}"
     ask "install these with pacman?" && sudo pacman -S --needed "${repo_pkgs[@]}" || skip "skipped repo packages"
@@ -111,6 +109,7 @@ else
   mapfile -t entries < <(cd "$REPO_DIR/.config" && ls -1)
 fi
 for name in "${entries[@]}"; do
+  if [ "$name" = qt6ct ]; then continue; fi   # copied, not linked — see below
   src="$REPO_DIR/.config/$name"; dst="$HOME/.config/$name"
   if [ -L "$dst" ] && [ "$(readlink -f "$dst")" = "$(readlink -f "$src")" ]; then
     skip "$name (already linked)"; continue
@@ -122,14 +121,21 @@ for name in "${entries[@]}"; do
   mkdir -p "$(dirname "$dst")"; ln -s "$src" "$dst"; ok "$name -> repo"
 done
 
-# one config can't use ~ (qt6ct stores an absolute color-scheme path). rewrite
-# the author's home to yours in this clone so Qt apps get themed. no-op for the
-# author; harmless if the file's already yours.
-if [ "$HOME" != "/home/aidan" ]; then
-  qtc="$REPO_DIR/.config/qt6ct/qt6ct.conf"
-  if [ -f "$qtc" ] && grep -q "/home/aidan" "$qtc"; then
-    sed -i "s#/home/aidan#$HOME#g" "$qtc"; ok "qt6ct color path pointed at $HOME"
-  fi
+# qt6ct is the one config we copy instead of link: it stores an absolute
+# color-scheme path (no ~ support) and qt6ct rewrites the file itself, so a
+# symlink would leave every clone permanently dirty and break the shell's
+# ff-only self-update pull.
+qtsrc="$REPO_DIR/.config/qt6ct"; qtdst="$HOME/.config/qt6ct"
+if [ -L "$qtdst" ]; then
+  mkdir -p "$BACKUP_DIR"; mv "$qtdst" "$BACKUP_DIR/qt6ct"
+  warn "qt6ct was linked into the repo — backed up, using a real copy now"
+fi
+if [ ! -e "$qtdst/qt6ct.conf" ]; then
+  mkdir -p "$qtdst"; cp -r "$qtsrc/." "$qtdst/"
+  sed -i "s#/home/aidan#$HOME#g" "$qtdst/qt6ct.conf"
+  ok "qt6ct copied to ~/.config/qt6ct (color path -> $HOME)"
+else
+  skip "qt6ct exists (left yours alone)"
 fi
 
 # ── per-machine hypr conf (untracked; hyprland.conf sources these) ────────
@@ -238,6 +244,22 @@ else
   skip "themes skipped (--no-theme)"
 fi
 
+# ── login shell ───────────────────────────────────────────────────────────
+# the tty1 autostart that execs Hyprland is a fish conf.d snippet, so a bash
+# login shell means it never fires.
+say "Login shell"
+cur_shell="$(getent passwd "$USER" | cut -d: -f7)"
+fish_bin="$(command -v fish || true)"
+if [ -z "$fish_bin" ]; then
+  warn "fish isn't installed — the tty1 autostart won't run without it"
+elif [ "$cur_shell" = "$fish_bin" ]; then
+  skip "login shell is already fish"
+elif ask "make fish your login shell? (chsh — needed for the tty1 autostart)"; then
+  chsh -s "$fish_bin" && ok "login shell -> fish (next login)" || warn "chsh failed — run 'chsh -s $fish_bin' by hand"
+else
+  skip "left as $cur_shell — you'll have to start Hyprland yourself"
+fi
+
 # ── services ──────────────────────────────────────────────────────────────
 say "Services"
 if ask "enable NetworkManager + bluetooth (system) and wireplumber (user)?"; then
@@ -285,7 +307,8 @@ fi
 say "Done"
 cat <<EOF
 
-  Log out and start Hyprland (from a TTY: \`Hyprland\`, or via your display manager).
+  Log out and start Hyprland — \`start-hyprland\` from a TTY. (There's no display
+  manager here: the rice boots to tty1 and the fish autostart launches it.)
 
   ${c_dim}Set your display layout in ~/.config/hypr/monitors.conf if the default
   (auto, 1x scale) isn't right. The wallpaper restores to your last-applied

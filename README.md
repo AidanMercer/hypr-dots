@@ -68,7 +68,9 @@ The installer is guided — it asks before each step and backs up anything it wo
 
 Flags: `--no-packages`, `--no-theme`, `--no-frostify`, `--yes` (unattended).
 
-Then log out and start Hyprland (`Hyprland` from a TTY, or via a display manager). Set your
+Then log out and start Hyprland with `start-hyprland` from a TTY. There's no display
+manager — the rice boots to tty1 and the fish autostart (`.config/fish/conf.d/`) execs
+the compositor; see `etc/README.md` for the autologin + splash side of that. Set your
 displays in `~/.config/hypr/monitors.conf` if the default isn't right.
 
 ## Keys
