@@ -13,8 +13,13 @@ import "../common"
 // window — focusing jumps to its workspace, so this doubles as a switch-
 // anywhere. Toggled via `qs ipc call workspaceOverview toggle` (Super+Tab).
 //
-// Phase 1: icon + title tiles, click/esc, spring-out zoom. Live thumbnails
-// and keyboard rotation come next.
+// The active theme can ship an overview.qml next to its wallpaper to replace
+// the chrome — an invisible Item declaring `pal`/`overview` (both injected)
+// plus optional scalars (scrim/card/title/hint colors, radii, hint text) and
+// optional Components: backdrop (above the scrim, below the ring), overlay
+// (above everything), tileUnderlay/tileOverlay (per tile; the root may declare
+// `property var tile` to receive the live tile — index/isCenter/hot/win).
+// No overview.qml → the glass tiles below, unchanged.
 PanelWindow {
     id: root
 
@@ -48,6 +53,60 @@ PanelWindow {
     // keyboard/hover cursor: index into `tiles`. Shared by arrow-key nav and the
     // mouse, so there's only ever one highlight.
     property int selected: -1
+
+    // ── theme chrome: the theme's overview.qml when it ships one, glass otherwise ──
+    // Follows the focused monitor's theme so the chrome is already mounted when
+    // the exposé opens there.
+    property string themeDir: ActiveTheme.focusedDir
+    property string chromePath: ""
+    property int chromeNonce: 0
+    property ThemePalette pal: ThemePalette { themeDir: root.themeDir }
+    readonly property var chrome: chromeLoader.item
+    // optional chrome property with a glass fallback (NotificationCenter's cp)
+    function cp(name, dflt) {
+        const c = root.chrome
+        return (c && c[name] !== undefined) ? c[name] : dflt
+    }
+
+    function fileUrl(p) {
+        return "file://" + p.split("/").map(encodeURIComponent).join("/")
+    }
+    Process {
+        id: chromeProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const p = text.trim()
+                if (p !== root.chromePath) { root.chromePath = p; root.remountChrome() }
+            }
+        }
+    }
+    // command built at call time, not bound — the one-behind trap again
+    function rescanChrome() {
+        chromeProc.command = ["bash", "-c",
+            'd="$1"; f="$d/overview.qml"; { [ -n "$d" ] && [ -f "$f" ]; } || exit 0; printf "%s" "$f"',
+            "_", root.themeDir]
+        chromeProc.running = true
+    }
+    onThemeDirChanged: rescanChrome()
+    function remountChrome() {
+        if (root.chromePath === "") { chromeLoader.source = ""; return }
+        chromeLoader.setSource(root.fileUrl(root.chromePath) + "?v=" + root.chromeNonce,
+                               { pal: root.pal, overview: root })
+    }
+    onChromeNonceChanged: remountChrome()
+    // non-visual provider object; the slots below mount its Components
+    Loader { id: chromeLoader }
+    FileView {
+        path: root.chromePath
+        watchChanges: root.chromePath !== ""
+        printErrors: false
+        onFileChanged: root.chromeNonce++
+    }
+    Connections {
+        target: ControlBus
+        function onThemeReloadRequested() { root.chromeNonce++; root.rescanChrome() }
+    }
+    Component.onCompleted: rescanChrome()
 
     // 0 closed, 1 open. Every tile eases its position out from the center and
     // scales up off this — that's the zoom-out pop. OutBack overshoots on the
@@ -205,8 +264,8 @@ PanelWindow {
     // wallpaper pushed back so the tiles read.
     Rectangle {
         anchors.fill: parent
-        color: "#000000"
-        opacity: root.open ? 0.42 : 0
+        color: root.cp("scrimColor", "#000000")
+        opacity: root.open ? root.cp("scrimOpacity", 0.42) : 0
         Behavior on opacity { NumberAnimation { duration: 200 } }
     }
 
@@ -215,6 +274,15 @@ PanelWindow {
         anchors.fill: parent
         enabled: root.open
         onClicked: root.closeMenu()
+    }
+
+    // theme scenery above the scrim, below the ring (chrome.backdrop). Mounted
+    // only while the exposé is up, so a closed overview costs nothing. Visual
+    // only by contract — no input handlers, clicks fall through to the scrim.
+    Loader {
+        anchors.fill: parent
+        active: (root.open || root.closing) && !!(root.chrome && root.chrome.backdrop)
+        sourceComponent: active ? root.chrome.backdrop : undefined
     }
 
     Item {
@@ -258,22 +326,37 @@ PanelWindow {
             // lift each tile off the busy desktop behind it
             RectangularShadow {
                 anchors.fill: parent
-                radius: Theme.popupRadius
+                visible: root.cp("shadowOn", true)
+                radius: root.cp("cardRadius", Theme.popupRadius)
                 blur: 40
                 offset: Qt.vector2d(0, 16)
-                color: Qt.rgba(0, 0, 0, 0.5)
+                color: root.cp("shadowColor", Qt.rgba(0, 0, 0, 0.5))
                 opacity: root.reveal
+            }
+
+            // theme chassis behind the card (chrome.tileUnderlay); its root may
+            // declare `property var tile` to receive this delegate live —
+            // index / isCenter / hot / win / width / height. Item doesn't clip,
+            // so brackets and glows may paint outside the tile bounds.
+            Loader {
+                anchors.fill: parent
+                active: !!(root.chrome && root.chrome.tileUnderlay)
+                sourceComponent: active ? root.chrome.tileUnderlay : undefined
+                onLoaded: if (item && item.hasOwnProperty("tile")) item.tile = tile
             }
 
             Rectangle {
                 id: card
                 anchors.fill: parent
-                radius: Theme.popupRadius
-                color: Theme.menuBg
-                border.color: tile.hot ? Theme.accent
-                           : (tile.isCenter ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.55)
-                                            : Theme.glassBorder)
-                border.width: tile.hot || tile.isCenter ? 2 : 1
+                radius: root.cp("cardRadius", Theme.popupRadius)
+                color: root.cp("cardBg", Theme.menuBg)
+                border.color: tile.hot ? root.cp("cardBorderHot", Theme.accent)
+                           : (tile.isCenter ? root.cp("cardBorderCenter",
+                                  Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.55))
+                                            : root.cp("cardBorder", Theme.glassBorder))
+                border.width: tile.hot ? root.cp("cardBorderWidthHot", 2)
+                           : (tile.isCenter ? root.cp("cardBorderWidthCenter", 2)
+                                            : root.cp("cardBorderWidth", 1))
                 Behavior on border.color { ColorAnimation { duration: 120 } }
 
                 scale: tile.hot ? 1.04 : 1
@@ -287,7 +370,7 @@ PanelWindow {
                     anchors.leftMargin: parent.radius
                     anchors.rightMargin: parent.radius
                     height: 1
-                    color: Theme.glassHighlight
+                    color: root.cp("cardHighlight", Theme.glassHighlight)
                 }
 
                 // live thumbnail of the real window
@@ -298,8 +381,8 @@ PanelWindow {
                     anchors.right: parent.right
                     anchors.margins: 8
                     height: tile.height - root.footerH - 12
-                    radius: 9
-                    color: Theme.insetBg
+                    radius: root.cp("thumbRadius", 9)
+                    color: root.cp("thumbBg", Theme.insetBg)
 
                     ScreencopyView {
                         id: thumb
@@ -349,7 +432,12 @@ PanelWindow {
                         anchors.verticalCenter: parent.verticalCenter
                         text: tile.win.title || tile.win.cls || "window"
                         textFormat: Text.PlainText
-                        color: tile.hot ? Theme.textBright : Theme.textSecondary
+                        color: tile.hot ? root.cp("titleHotColor", Theme.textBright)
+                                        : root.cp("titleColor", Theme.textSecondary)
+                        font.family: {
+                            const f = root.cp("titleFont", "")
+                            return f !== "" ? f : Application.font.family
+                        }
                         font.pixelSize: tile.isCenter ? 13 : 12
                         elide: Text.ElideRight
                         maximumLineCount: 1
@@ -364,16 +452,27 @@ PanelWindow {
                     onClicked: root.focusWindow(tile.win.address)
                 }
             }
+
+            // theme decoration above the card (chrome.tileOverlay) — reticles,
+            // tags, glints. Same `tile` injection as tileUnderlay; visual only
+            // by contract so the card's MouseArea keeps working underneath.
+            Loader {
+                anchors.fill: parent
+                z: 10
+                active: !!(root.chrome && root.chrome.tileOverlay)
+                sourceComponent: active ? root.chrome.tileOverlay : undefined
+                onLoaded: if (item && item.hasOwnProperty("tile")) item.tile = tile
+            }
         }
     }
 
     // empty state
     Text {
         anchors.centerIn: parent
-        visible: root.open && root.windows.length === 0
-        text: "No open windows"
-        color: Theme.textMuted
-        font.family: Theme.mono
+        visible: root.open && root.windows.length === 0 && text !== ""
+        text: root.cp("emptyText", "No open windows")
+        color: root.cp("hintColor", Theme.textMuted)
+        font.family: root.cp("hintFont", Theme.mono)
         font.pixelSize: 15
         opacity: root.reveal
     }
@@ -383,12 +482,20 @@ PanelWindow {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 72
-        visible: root.windows.length > 0
-        text: "arrows to move    enter / click to switch    esc to close"
-        color: Theme.textMuted
-        font.family: Theme.mono
+        visible: root.windows.length > 0 && text !== ""
+        text: root.cp("hintText", "arrows to move    enter / click to switch    esc to close")
+        color: root.cp("hintColor", Theme.textMuted)
+        font.family: root.cp("hintFont", Theme.mono)
         font.pixelSize: 11
         font.letterSpacing: 1
         opacity: root.reveal * 0.8
+    }
+
+    // theme layer above everything (chrome.overlay — scanlines, vignettes,
+    // HUD readouts). Mounted only while up; no input handlers by contract.
+    Loader {
+        anchors.fill: parent
+        active: (root.open || root.closing) && !!(root.chrome && root.chrome.overlay)
+        sourceComponent: active ? root.chrome.overlay : undefined
     }
 }
