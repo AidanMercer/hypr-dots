@@ -219,7 +219,6 @@ PanelWindow {
         applying = true
         activeTheme = cur          // the sticker is pressed on optimistically
         activeVar = varSel[cur] ?? 0
-        applyWatchdog.restart()
         applyWallpaper(w.path)
     }
     Timer {
@@ -227,7 +226,10 @@ PanelWindow {
         interval: 6000
         onTriggered: {
             ControlBus.swapping = false   // a wedged awww must not strand bare chrome
-            if (root.applying) root.closeMenu()
+            if (root.applying) {
+                root.applying = false     // closeMenu bails early if we're not open
+                root.closeMenu()
+            }
         }
     }
 
@@ -242,6 +244,10 @@ PanelWindow {
     // chrome back in once the dust has settled.
     function applyWallpaper(wallpaper) {
         if (!wallpaper) return
+        // every route into `swapping` funnels through here (gallery Enter, the
+        // theme IPC, the palette, the marketplace) — arm the watchdog at the
+        // choke point or a hung awww strands the desktop with no chrome
+        applyWatchdog.restart()
         if (applyProc.running) return   // don't clobber pendingThemeDir mid-flight
         root.pendingThemeDir = wallpaper.substring(0, wallpaper.lastIndexOf("/"))
         // what awww actually shows (the still for an mp4) — persisted so login

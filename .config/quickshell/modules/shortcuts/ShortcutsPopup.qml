@@ -385,6 +385,22 @@ PanelWindow {
     Process {
         id: installProc
         stdout: SplitParser { onRead: (line) => root.onInstallLine(line) }
+        // a script that dies without printing DONE/ERR would leave mktBusy set
+        // and every store button dimmed until the shell restarts
+        onExited: (code, status) => { installFail.code = code; installFail.restart() }
+    }
+    // deferred: the last stdout lines can still be parsed after exit
+    Timer {
+        id: installFail
+        interval: 200
+        property int code: 0
+        onTriggered: {
+            if (root.mktBusy === "") return
+            const m = Object.assign({}, root.mktProgress); delete m[root.mktBusy]
+            root.mktProgress = m
+            root.mktError = "the download quit early (exit " + code + ")"
+            root.mktBusy = ""
+        }
     }
     function installTheme(t) {
         if (root.mktBusy !== "" || installProc.running || !t || !t.files) return
@@ -535,6 +551,19 @@ PanelWindow {
     Process {
         id: extActProc
         stdout: SplitParser { onRead: (line) => root.onExtActLine(line) }
+        onExited: (code, status) => { extActFail.code = code; extActFail.restart() }
+    }
+    Timer {
+        id: extActFail
+        interval: 200
+        property int code: 0
+        onTriggered: {
+            if (root.extBusy === "") return
+            const m = Object.assign({}, root.extProgress); delete m[root.extBusy]
+            root.extProgress = m
+            root.extError = "that quit early (exit " + code + ")"
+            root.extBusy = ""
+        }
     }
     function extInstall(name) {   // installs if absent, updates if present
         if (root.extBusy !== "" || extActProc.running) return
@@ -701,6 +730,7 @@ PanelWindow {
                 root.startExtUpdate()
             } else if (line === "__fail__") root.updState = "error"
         } }
+        onExited: (code, status) => updFail.restart()
     }
     // update every installed extension: ff-only pull + setup re-run, so the
     // desktop-entry/portal/dep fixes land even on apps that were already current
@@ -714,6 +744,16 @@ PanelWindow {
                 root.extCheck()
             }
         } }
+        onExited: (code, status) => updFail.restart()
+    }
+    // neither half printed its finish line — don't sit on "pulling" forever
+    Timer {
+        id: updFail
+        interval: 200
+        onTriggered: {
+            if (root.updState === "pulling" && !updPullProc.running && !extUpdAllProc.running)
+                root.updState = "error"
+        }
     }
     function startExtUpdate() {
         if (extUpdAllProc.running) return
