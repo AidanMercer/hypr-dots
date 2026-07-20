@@ -349,7 +349,8 @@ PanelWindow {
         if (t === "" || t === "NETERR") { root.mktError = "couldn't reach the store"; return }
         try {
             const j = JSON.parse(t)
-            root.mktThemes = j.themes || []
+            root.mktThemes = (j.themes || []).slice().sort((a, b) =>
+                (b.best === true) - (a.best === true) || a.name.localeCompare(b.name))
             root.mktCommit = j.commit || root.mktBranch
             root.mktError = ""
         } catch (e) { root.mktError = "the catalog looked malformed" }
@@ -1712,6 +1713,7 @@ PanelWindow {
                             readonly property bool downloading: prog !== null
                             readonly property bool selected: root.mktRow === index
                             readonly property bool armed: root.mktArmedRemove === modelData.name
+                            readonly property bool best: modelData.best === true
                             readonly property int mb: Math.max(1, Math.round((modelData.bytes || 0) / 1048576))
                             readonly property var tags: {
                                 const a = []
@@ -1727,7 +1729,9 @@ PanelWindow {
                             radius: 10
                             color: mrow.selected ? Theme.rowSelected
                                  : (mrowHover.hovered ? Theme.rowHover : "transparent")
-                            border.color: mrow.selected ? Theme.accent : Theme.glassBorder
+                            border.color: mrow.selected ? Theme.accent
+                                        : mrow.best ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.65)
+                                        : Theme.glassBorder
                             border.width: 1
 
                             HoverHandler { id: mrowHover }
@@ -1776,6 +1780,21 @@ PanelWindow {
                                         color: Theme.textBright
                                         font.pixelSize: 15
                                         font.weight: Font.DemiBold
+                                    }
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        visible: mrow.best
+                                        height: 16; width: bestT.implicitWidth + 12; radius: 4
+                                        color: Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.14)
+                                        border.color: Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.65)
+                                        border.width: 1
+                                        Text {
+                                            id: bestT; anchors.centerIn: parent
+                                            text: "★ best"
+                                            color: Theme.warning
+                                            font.pixelSize: 10
+                                            font.letterSpacing: 0.5
+                                        }
                                     }
                                     Row {
                                         anchors.verticalCenter: parent.verticalCenter
