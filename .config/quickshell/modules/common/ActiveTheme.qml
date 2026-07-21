@@ -71,7 +71,20 @@ QtObject {
         // a monitor can paint late at login/hotplug — keep polling until every
         // screen resolved, only then stop retrying.
         if (Quickshell.screens.every(s => m[s.name])) at.retriesLeft = 0
+        // a monitor plugged in after boot stays black: the daemon runs --no-cache
+        // and the splash only restores at login. push the last wallpaper to just
+        // the black outputs. needs one screen already resolved so this can never
+        // fire at cold boot and race the splash restore.
+        const dark = Quickshell.screens.filter(s => !m[s.name]).map(s => s.name)
+        if (dark.length && dark.length < Quickshell.screens.length && !restoreProc.running) {
+            restoreProc.command = ["sh", "-c",
+                'p=$(cat "${XDG_CACHE_HOME:-$HOME/.cache}/world80/last-wallpaper" 2>/dev/null); ' +
+                '[ -n "$p" ] && [ -f "$p" ] && awww img -o "$1" "$p"', "sh", dark.join(",")]
+            restoreProc.running = true
+        }
     }
+
+    property Process _restore: Process { id: restoreProc }
 
     property Process _query: Process {
         id: queryProc
@@ -92,6 +105,12 @@ QtObject {
     property Connections _bus: Connections {
         target: ControlBus
         function onWallpaperChanged() { at.reload() }
+    }
+
+    // and on monitor hotplug
+    property Connections _screens: Connections {
+        target: Quickshell
+        function onScreensChanged() { at.reload() }
     }
 
     Component.onCompleted: queryProc.running = true
