@@ -44,12 +44,12 @@ Scope {
     }
     function volumeUp(): void {
         const a = sink ? sink.audio : null
-        if (a) { a.muted = false; a.volume = Math.min(1, a.volume + 0.05) }
+        if (a) { a.muted = false; a.volume = Volume.clamp(a.volume + Volume.step) }
         showVolume()
     }
     function volumeDown(): void {
         const a = sink ? sink.audio : null
-        if (a) a.volume = Math.max(0, a.volume - 0.05)
+        if (a) a.volume = Volume.clamp(a.volume - Volume.step)
         showVolume()
     }
     function muteToggle(): void {
@@ -134,8 +134,14 @@ Scope {
         color: "transparent"
         mask: Region {}   // fully click-through
 
+        // Volume runs past unity (software gain on a maxed-out codec); mic and
+        // brightness stop at 1, so the gauge is scaled per kind and marks unity.
+        readonly property real gaugeMax: root.kind === "volume" ? Volume.max : 1
+        readonly property bool boosted: root.kind === "volume" && root.value > 1.001
+
         readonly property color fillColor: root.kind === "brightness" ? Theme.warning
                                          : root.muted ? Theme.volGradMuteStart
+                                         : win.boosted ? Theme.warning
                                          : Theme.accent
 
         readonly property string glyph: {
@@ -202,9 +208,19 @@ Scope {
                 Rectangle {
                     height: parent.height
                     radius: 4
-                    width: Math.max(0, Math.min(1, root.value)) * parent.width
+                    width: Math.max(0, Math.min(1, root.value / win.gaugeMax)) * parent.width
                     color: win.fillColor
                     Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
+                }
+
+                // 100% mark — past it you're on software gain, not the speakers
+                Rectangle {
+                    visible: win.gaugeMax > 1
+                    x: parent.width / win.gaugeMax - width / 2
+                    width: 2
+                    height: parent.height
+                    color: Theme.textDim
+                    opacity: 0.8
                 }
             }
         }

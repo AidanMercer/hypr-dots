@@ -13,6 +13,9 @@ Item {
     readonly property real vol: sink?.audio?.volume ?? 0
     readonly property bool muted: sink?.audio?.muted ?? false
     readonly property int volPercent: Math.round(vol * 100)
+    // past 100% the codec is already flat out and Pipewire is adding software
+    // gain — flag it so the boost never looks like ordinary headroom
+    readonly property bool boosted: vol > 1.001
 
     // Output then input device lists, shared by the two Repeaters and keyboard
     // navigation so the indices line up. The volume slider stays mouse-only.
@@ -54,7 +57,9 @@ Item {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.volPercent + "%"
-                color: root.muted ? Theme.textDim : Theme.textBright
+                color: root.muted ? Theme.textDim
+                     : root.boosted ? Theme.warning
+                     : Theme.textBright
                 font.pixelSize: 24
                 font.family: Theme.mono
                 font.weight: Font.Light
@@ -68,7 +73,8 @@ Item {
             width: parent.width
             height: 18
 
-            readonly property real fillWidth: track.width * root.vol
+            // the track spans 0…Volume.max, so unity sits short of the right edge
+            readonly property real fillWidth: track.width * Math.min(1, root.vol / Volume.max)
 
             Rectangle {
                 id: track
@@ -86,8 +92,22 @@ Item {
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
                         GradientStop { position: 0; color: root.muted ? Theme.volGradMuteStart : Theme.volGradStart }
-                        GradientStop { position: 1; color: root.muted ? Theme.volGradMuteEnd : Theme.volGradEnd }
+                        GradientStop {
+                            position: 1
+                            color: root.muted ? Theme.volGradMuteEnd
+                                 : root.boosted ? Theme.warning
+                                 : Theme.volGradEnd
+                        }
                     }
+                }
+
+                // 100% mark — past it you're on software gain, not the speakers
+                Rectangle {
+                    x: parent.width / Volume.max - width / 2
+                    width: 2
+                    height: parent.height
+                    color: Theme.textDim
+                    opacity: 0.8
                 }
             }
 
@@ -118,7 +138,7 @@ Item {
 
                 function setVol(x) {
                     if (!root.sink) return
-                    root.sink.audio.volume = Math.max(0, Math.min(1, x / volSlider.width))
+                    root.sink.audio.volume = Volume.clamp(x / volSlider.width * Volume.max)
                 }
             }
         }
